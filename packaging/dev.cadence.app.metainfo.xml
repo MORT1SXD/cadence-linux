@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.cadence.app</id>
+  <name>Cadence</name>
+  <summary>Send music, heart rate, and notes to your VRChat chatbox</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="com.github.mort1sxd">
+    <name>MORT1SXD</name>
+  </developer>
+  <description>
+    <p>Arrange music, heart rate, a local clock, and other sources in a live preview, then send the result through VRChat's OSC input.</p>
+  </description>
+  <launchable type="desktop-id">dev.cadence.app.desktop</launchable>
+  <url type="homepage">https://github.com/MORT1SXD/cadence-linux</url>
+  <content_rating type="oars-1.1"/>
+</component>

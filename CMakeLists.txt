@@ -69,6 +69,7 @@ add_executable(cadence ${CADENCE_SOURCES})
 install(TARGETS cadence RUNTIME DESTINATION bin)
 install(FILES packaging/dev.cadence.app.desktop DESTINATION share/applications)
 install(FILES packaging/dev.cadence.app.svg DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES packaging/dev.cadence.app.metainfo.xml DESTINATION share/metainfo)
 install(FILES LICENSE DESTINATION share/doc/cadence)
 
 # Always defined, even when Discord is compiled out, so settings.hpp stays

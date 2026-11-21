@@ -7,6 +7,7 @@ work=$(realpath -m "${1:-$root/build/appimage}")
 output=$(realpath -m "${2:-$root/build/dist}")
 mkdir -p "$work" "$output"
 appdir=$(mktemp -d "$work/AppDir.XXXXXX")
+chmod 0755 "$appdir"
 trap 'rm -rf -- "$appdir"' EXIT
 tools="$work/tools"
 mkdir -p "$tools"
@@ -56,6 +57,8 @@ for lib in libgtk-4.so.1 libadwaita-1.so.0; do
     test -e "$appdir/usr/lib/$lib"
 done
 compgen -G "$appdir/usr/lib/libwebsockets.so.*" >/dev/null
+rsvg-convert -w 256 -h 256 -o "$appdir/dev.cadence.app.png" "$root/packaging/dev.cadence.app.svg"
+ln -s dev.cadence.app.png "$appdir/.DirIcon"
 
 # Record Ubuntu source package versions and ship the copyright notices for
 # libraries and data copied into the image.

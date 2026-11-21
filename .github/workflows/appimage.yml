@@ -18,7 +18,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake g++ git pkg-config libgtk-4-dev libadwaita-1-dev libwebsockets-dev \
-            libgdk-pixbuf-2.0-dev librsvg2-common gsettings-desktop-schemas adwaita-icon-theme \
+            libgdk-pixbuf-2.0-dev librsvg2-common librsvg2-bin gsettings-desktop-schemas adwaita-icon-theme \
             desktop-file-utils file patchelf squashfs-tools xvfb xauth dbus-daemon
       - name: Build and package
         run: bash packaging/build-appimage.sh "$RUNNER_TEMP/appimage" dist
