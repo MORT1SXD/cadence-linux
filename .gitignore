@@ -1,0 +1,21 @@
+# Build and release outputs
+/build/
+/dist/
+
+# Local build byproducts outside build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.o
+*.a
+*.so
+*.d
+
+# Editor / OS noise
+.cache/
+*.swp
+*.swo
+*~
+.DS_Store
+thumbs.db

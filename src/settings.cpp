@@ -1,0 +1,231 @@
+#include "settings.hpp"
+
+#include <algorithm>
+#include <charconv>
+#include <filesystem>
+#include <glib.h>
+
+namespace cadence {
+
+namespace {
+
+// internal state file the app owns entirely - not meant to be hand-edited
+std::string config_path() {
+    std::string dir = std::string(g_get_user_config_dir()) + "/cadence";
+    std::filesystem::create_directories(dir);
+    return dir + "/state.ini";
+}
+
+// g_key_file_get_boolean returns false (with an error set) for a missing key,
+// which would silently stomp a true default - so fall back explicitly instead
+bool get_bool(GKeyFile* kf, const char* group, const char* key, bool fallback) {
+    GError* err = nullptr;
+    gboolean v = g_key_file_get_boolean(kf, group, key, &err);
+    if (err) {
+        g_error_free(err);
+        return fallback;
+    }
+    return v;
+}
+
+std::string get_string(GKeyFile* kf, const char* group, const char* key, const std::string& fallback) {
+    gchar* v = g_key_file_get_string(kf, group, key, nullptr);
+    if (!v) return fallback;
+    std::string result = v;
+    g_free(v);
+    return result;
+}
+
+int get_int(GKeyFile* kf, const char* group, const char* key, int fallback) {
+    GError* err = nullptr;
+    int v = g_key_file_get_integer(kf, group, key, &err);
+    if (err) {
+        g_error_free(err);
+        return fallback;
+    }
+    return v;
+}
+
+// Reads a stored block order, dropping unknown/duplicate ids and appending any
+// missing ones. An empty result means "no stored order", so the caller can
+// migrate from the old heart_first key instead.
+std::vector<int> parse_order(const std::string& raw) {
+    std::vector<int> out;
+    if (raw.empty()) return out;
+
+    gchar** parts = g_strsplit(raw.c_str(), ",", -1);
+    for (int i = 0; parts[i]; ++i) {
+        const std::string part = g_strstrip(parts[i]);
+        int v = 0;
+        const auto [end, error] = std::from_chars(part.data(), part.data() + part.size(), v);
+        if (error != std::errc{} || end != part.data() + part.size()
+            || v < COMP_HEART || v >= COMP_COUNT) continue;
+        if (std::find(out.begin(), out.end(), v) != out.end()) continue;
+        out.push_back(v);
+    }
+    g_strfreev(parts);
+    if (out.empty()) return out;
+
+    for (int v = COMP_HEART; v < COMP_COUNT; ++v)
+        if (std::find(out.begin(), out.end(), v) == out.end()) out.push_back(v);
+    return out;
+}
+
+} // namespace
+
+AppSettings AppSettings::load() {
+    AppSettings s;
+    GKeyFile* kf = g_key_file_new();
+    if (g_key_file_load_from_file(kf, config_path().c_str(), G_KEY_FILE_NONE, nullptr)) {
+        s.component_order = parse_order(get_string(kf, "layout", "order", ""));
+        if (s.component_order.empty()) {
+            // migrate the old two-block layout key
+            const bool heart_first = get_bool(kf, "layout", "heart_first", true);
+            s.component_order = heart_first
+                ? std::vector<int>{COMP_HEART, COMP_SONG, COMP_CLOCK, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER}
+                : std::vector<int>{COMP_SONG, COMP_HEART, COMP_CLOCK, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER};
+        }
+
+        s.show_heart_component = get_bool(kf, "heart", "enabled", s.show_heart_component);
+        s.show_bpm_current = get_bool(kf, "heart", "show_current", s.show_bpm_current);
+        s.show_bpm_min = get_bool(kf, "heart", "show_min", s.show_bpm_min);
+        s.show_bpm_avg = get_bool(kf, "heart", "show_avg", s.show_bpm_avg);
+        s.show_bpm_max = get_bool(kf, "heart", "show_max", s.show_bpm_max);
+        s.heart_icon = get_string(kf, "heart", "heart_icon", s.heart_icon);
+
+        s.show_song_component = get_bool(kf, "song", "enabled", s.show_song_component);
+        s.show_title = get_bool(kf, "song", "show_title", s.show_title);
+        s.show_artist = get_bool(kf, "song", "show_artist", s.show_artist);
+        s.show_music_progress = get_bool(kf, "song", "show_progress", s.show_music_progress);
+        s.note_icon = get_string(kf, "song", "note_icon", s.note_icon);
+        s.separator = get_string(kf, "song", "separator", s.separator);
+        s.truncate_length = get_int(kf, "song", "truncate_length", s.truncate_length);
+
+        s.show_clock_component = get_bool(kf, "clock", "enabled", s.show_clock_component);
+        s.clock_24h = get_bool(kf, "clock", "format_24h", s.clock_24h);
+        s.clock_show_seconds = get_bool(kf, "clock", "show_seconds", s.clock_show_seconds);
+        s.clock_show_date = get_bool(kf, "clock", "show_date", s.clock_show_date);
+        s.clock_icon = get_string(kf, "clock", "icon", s.clock_icon);
+
+        s.show_custom_component = get_bool(kf, "custom", "enabled", s.show_custom_component);
+        s.custom_text = get_string(kf, "custom", "text", s.custom_text);
+        s.custom_icon = get_string(kf, "custom", "icon", s.custom_icon);
+
+        s.show_battery_component = get_bool(kf, "battery", "enabled", s.show_battery_component);
+        s.battery_icon = get_string(kf, "battery", "icon", s.battery_icon);
+        s.battery_show_state = get_bool(kf, "battery", "show_state", s.battery_show_state);
+
+        s.show_system_component = get_bool(kf, "system", "enabled", s.show_system_component);
+        s.system_show_cpu = get_bool(kf, "system", "show_cpu", s.system_show_cpu);
+        s.system_show_memory = get_bool(kf, "system", "show_memory", s.system_show_memory);
+
+        s.show_timer_component = get_bool(kf, "timer", "enabled", s.show_timer_component);
+        s.timer_countdown = get_bool(kf, "timer", "countdown", s.timer_countdown);
+        s.timer_minutes = std::clamp(get_int(kf, "timer", "minutes", s.timer_minutes), 1, 180);
+        s.timer_icon = get_string(kf, "timer", "icon", s.timer_icon);
+
+        s.compact_layout = get_bool(kf, "layout", "compact", s.compact_layout);
+        s.compact_separator = get_string(kf, "layout", "separator", s.compact_separator);
+
+        s.box_drawing = get_bool(kf, "display", "box_drawing", s.box_drawing);
+        s.animations_enabled = get_bool(kf, "display", "animations_enabled", s.animations_enabled);
+
+        s.notification_sfx = get_bool(kf, "output", "notification_sfx", s.notification_sfx);
+        s.send_interval_ms = get_int(kf, "output", "send_interval_ms", s.send_interval_ms);
+        if (s.send_interval_ms != 2000 && s.send_interval_ms != 5000) s.send_interval_ms = 1000;
+        s.bpm_smoothing = get_int(kf, "output", "bpm_smoothing", s.bpm_smoothing);
+        if (s.send_interval_ms < 250) s.send_interval_ms = 1000;
+
+        s.pulsoid_token = get_string(kf, "pulsoid", "token", s.pulsoid_token);
+        s.osc_port = get_int(kf, "osc", "port", s.osc_port);
+
+        s.discord_acknowledged = get_bool(kf, "discord", "acknowledged", s.discord_acknowledged);
+        s.discord_music = get_bool(kf, "discord", "music", s.discord_music);
+        s.discord_heart_rate = get_bool(kf, "discord", "heart_rate", s.discord_heart_rate);
+        // only override the configured id if one was actually stored
+        const std::string stored_id = get_string(kf, "discord", "app_id", "");
+        if (!stored_id.empty()) s.discord_app_id = stored_id;
+
+        s.raw_template = get_string(kf, "format", "raw_template", "");
+        s.use_raw_template = get_bool(kf, "format", "use_raw_template", s.use_raw_template);
+        s.send_automatically = get_bool(kf, "output", "send_automatically", s.send_automatically);
+    }
+    g_key_file_free(kf);
+    return s;
+}
+
+void AppSettings::save() const {
+    GKeyFile* kf = g_key_file_new();
+
+    std::string order;
+    for (size_t i = 0; i < component_order.size(); ++i) {
+        if (i) order += ",";
+        order += std::to_string(component_order[i]);
+    }
+    g_key_file_set_string(kf, "layout", "order", order.c_str());
+    g_key_file_set_boolean(kf, "layout", "compact", compact_layout);
+    g_key_file_set_string(kf, "layout", "separator", compact_separator.c_str());
+
+    g_key_file_set_boolean(kf, "heart", "enabled", show_heart_component);
+    g_key_file_set_boolean(kf, "heart", "show_current", show_bpm_current);
+    g_key_file_set_boolean(kf, "heart", "show_min", show_bpm_min);
+    g_key_file_set_boolean(kf, "heart", "show_avg", show_bpm_avg);
+    g_key_file_set_boolean(kf, "heart", "show_max", show_bpm_max);
+    g_key_file_set_string(kf, "heart", "heart_icon", heart_icon.c_str());
+
+    g_key_file_set_boolean(kf, "song", "enabled", show_song_component);
+    g_key_file_set_boolean(kf, "song", "show_title", show_title);
+    g_key_file_set_boolean(kf, "song", "show_artist", show_artist);
+    g_key_file_set_boolean(kf, "song", "show_progress", show_music_progress);
+    g_key_file_set_string(kf, "song", "note_icon", note_icon.c_str());
+    g_key_file_set_string(kf, "song", "separator", separator.c_str());
+    g_key_file_set_integer(kf, "song", "truncate_length", truncate_length);
+
+    g_key_file_set_boolean(kf, "clock", "enabled", show_clock_component);
+    g_key_file_set_boolean(kf, "clock", "format_24h", clock_24h);
+    g_key_file_set_boolean(kf, "clock", "show_seconds", clock_show_seconds);
+    g_key_file_set_boolean(kf, "clock", "show_date", clock_show_date);
+    g_key_file_set_string(kf, "clock", "icon", clock_icon.c_str());
+
+    g_key_file_set_boolean(kf, "custom", "enabled", show_custom_component);
+    g_key_file_set_string(kf, "custom", "text", custom_text.c_str());
+    g_key_file_set_string(kf, "custom", "icon", custom_icon.c_str());
+
+    g_key_file_set_boolean(kf, "battery", "enabled", show_battery_component);
+    g_key_file_set_string(kf, "battery", "icon", battery_icon.c_str());
+    g_key_file_set_boolean(kf, "battery", "show_state", battery_show_state);
+
+    g_key_file_set_boolean(kf, "system", "enabled", show_system_component);
+    g_key_file_set_boolean(kf, "system", "show_cpu", system_show_cpu);
+    g_key_file_set_boolean(kf, "system", "show_memory", system_show_memory);
+
+    g_key_file_set_boolean(kf, "timer", "enabled", show_timer_component);
+    g_key_file_set_boolean(kf, "timer", "countdown", timer_countdown);
+    g_key_file_set_integer(kf, "timer", "minutes", timer_minutes);
+    g_key_file_set_string(kf, "timer", "icon", timer_icon.c_str());
+
+    g_key_file_set_boolean(kf, "display", "box_drawing", box_drawing);
+    g_key_file_set_boolean(kf, "display", "animations_enabled", animations_enabled);
+
+    g_key_file_set_boolean(kf, "output", "notification_sfx", notification_sfx);
+    g_key_file_set_integer(kf, "output", "send_interval_ms", send_interval_ms);
+    g_key_file_set_integer(kf, "output", "bpm_smoothing", bpm_smoothing);
+
+    g_key_file_set_string(kf, "pulsoid", "token", pulsoid_token.c_str());
+    g_key_file_set_integer(kf, "osc", "port", osc_port);
+
+    g_key_file_set_boolean(kf, "discord", "acknowledged", discord_acknowledged);
+    g_key_file_set_boolean(kf, "discord", "music", discord_music);
+    g_key_file_set_boolean(kf, "discord", "heart_rate", discord_heart_rate);
+    g_key_file_set_string(kf, "discord", "app_id", discord_app_id.c_str());
+
+    if (!raw_template.empty())
+        g_key_file_set_string(kf, "format", "raw_template", raw_template.c_str());
+    g_key_file_set_boolean(kf, "format", "use_raw_template", use_raw_template);
+    g_key_file_set_boolean(kf, "output", "send_automatically", send_automatically);
+
+    g_key_file_save_to_file(kf, config_path().c_str(), nullptr);
+    g_key_file_free(kf);
+}
+
+} // namespace cadence

@@ -1,0 +1,31 @@
+name: Build AppImage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  appimage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake g++ git pkg-config libgtk-4-dev libadwaita-1-dev libwebsockets-dev \
+            libgdk-pixbuf-2.0-dev librsvg2-common gsettings-desktop-schemas adwaita-icon-theme \
+            desktop-file-utils file patchelf squashfs-tools xvfb xauth dbus-daemon
+      - name: Build and package
+        run: bash packaging/build-appimage.sh "$RUNNER_TEMP/appimage" dist
+      - name: Launch the packaged app and check OSC
+        run: xvfb-run -a dbus-run-session -- python3 packaging/smoke-appimage.py dist/cadence-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadence-x86_64
+          path: dist/*
+          if-no-files-found: error

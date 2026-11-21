@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Cadence
+Comment=Send a custom chatbox to VRChat over OSC
+Exec=cadence
+Icon=dev.cadence.app
+Categories=Utility;
+Terminal=false
