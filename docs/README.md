@@ -20,6 +20,32 @@ Pausing VRChat output does not turn off Discord sharing.
 | Battery | Shows system battery level and, optionally, charging status. Omitted when no battery is detected. |
 | System Stats | Opt-in CPU and memory usage from Linux. |
 | Session Timer | A stopwatch or countdown with Start, Pause, and Reset. Enable **Include in Chatbox** to share it. |
+| Weather | Search for a city, select the matching region, and turn on **Include in Chatbox**. Choose °C, °F, or alternating units and whether to show the icon and condition. |
+| VRChat Status | Opt in to show your mic mute state, Earmuff Mode, either hand’s gesture, or movement speed. Each field is optional. |
+
+Weather never detects where you are. Clicking **Search** sends only the text
+you entered to [Open-Meteo](https://open-meteo.com/), which provides the weather
+data. Selecting a city saves that preset locally. Forecasts use its
+coordinates and refresh approximately every 15 minutes while Weather is
+enabled. The city name isn’t sent to VRChat.
+
+### VRChat Status
+
+Enable the source on **Chatbox**, then pick the fields you want to share.
+**Only Show Active States** hides an unmuted mic, off earmuffs, neutral
+gestures, and zero speed. You can set the speed units and field separator.
+
+Cadence reads VRChat’s [read-only OSC status outputs](https://wiki.vrchat.com/wiki/OSC#Avatar)
+on `127.0.0.1:9001` by default. It opens no listener while the source is off.
+It never accesses microphone audio or changes game controls; values only go
+to the chatbox if you enable that source and field. Local UDP packets are not
+authenticated, so do not treat the display as a privacy or microphone control.
+
+If the source is waiting for data, confirm OSC is enabled, then try changing a
+gesture, moving, or toggling mute in VRChat. Cadence clears cached values on
+avatar change or after a minute without supported updates. If another OSC app
+already listens on `9001`, close it, or use a router or a separate VRChat output
+port. Set the matching port under **Connectivity → VRChat Status** and retry.
 
 ## Connectivity
 

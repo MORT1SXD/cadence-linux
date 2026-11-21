@@ -47,6 +47,41 @@ std::string truncate(const std::string& s, int max_width) {
 
 int round_bpm(double v) { return static_cast<int>(std::lround(v)); }
 
+std::string vrchat_line(const VrchatStatus& value, const AppSettings& st) {
+    std::string out;
+    auto add = [&out, &st](const std::string& field) {
+        if (!out.empty()) out += st.vrchat_separator;
+        out += field;
+    };
+    if (st.vrchat_show_mic && value.muted && (*value.muted || !st.vrchat_active_only))
+        add(*value.muted ? "Mic muted" : "Mic unmuted");
+    if (st.vrchat_show_earmuffs && value.earmuffs && (*value.earmuffs || !st.vrchat_active_only))
+        add(*value.earmuffs ? "Earmuffs on" : "Earmuffs off");
+
+    static const char* gestures[] = {"Neutral", "Fist", "Open hand", "Point", "Victory", "Rock", "Finger gun", "Thumbs up"};
+    auto hand = [&add, &st](const char* label, std::optional<int> gesture) {
+        if (gesture && *gesture >= 0 && *gesture < 8 && (*gesture != 0 || !st.vrchat_active_only))
+            add(std::string(label) + gestures[*gesture]);
+    };
+    if (st.vrchat_show_left) hand("L: ", value.left_gesture);
+    if (st.vrchat_show_right) hand("R: ", value.right_gesture);
+    if (st.vrchat_show_speed && value.speed && (*value.speed > 0 || !st.vrchat_active_only)) {
+        double speed = *value.speed;
+        const char* unit = " m/s";
+        if (st.vrchat_speed_units == SpeedUnits::KilometersPerHour) {
+            speed *= 3.6;
+            unit = " km/h";
+        } else if (st.vrchat_speed_units == SpeedUnits::MilesPerHour) {
+            speed *= 2.236936;
+            unit = " mph";
+        }
+        char text[G_ASCII_DTOSTR_BUF_SIZE];
+        g_ascii_formatd(text, sizeof text, "%.1f", speed);
+        add(std::string(text) + unit);
+    }
+    return out;
+}
+
 // resolves one token name. an unresolvable token - or one with no data behind it
 // right now - yields "", which is what makes {if:...} blocks self-skipping
 std::string lookup(const std::string& key, const TemplateData& d, const AppSettings& st) {
@@ -71,6 +106,10 @@ std::string lookup(const std::string& key, const TemplateData& d, const AppSetti
         return format_duration(*d.track->position) + " / " + format_duration(*d.track->duration);
     if (key == "timer") return d.timer;
     if (key == "timer_icon") return st.timer_icon;
+    if (key == "weather_temperature") return d.weather ? d.weather->temperature : "";
+    if (key == "weather_icon") return d.weather && st.weather_show_icon ? d.weather->icon : "";
+    if (key == "weather_condition") return d.weather && st.weather_show_condition ? d.weather->condition : "";
+    if (key == "vrchat_status") return st.show_vrchat_component && d.vrchat ? vrchat_line(*d.vrchat, st) : "";
 
     if (key == "clock")      return d.clock ? d.clock->time : "";
     if (key == "clock_date") return d.clock ? d.clock->date : "";
@@ -343,6 +382,10 @@ static std::string block_for(int component, const AppSettings& st) {
         case COMP_SYSTEM:  return system_block(st);
         case COMP_TIMER:   return st.show_timer_component
             ? "{if:timer}{if:timer_icon}{timer_icon} {end}{timer}{end}" : "";
+        case COMP_WEATHER: return st.show_weather_component
+            ? "{if:weather_temperature}{if:weather_icon}{weather_icon} {end}{weather_temperature}"
+              "{if:weather_condition} · {weather_condition}{end}{end}" : "";
+        case COMP_VRCHAT: return st.show_vrchat_component ? "{vrchat_status}" : "";
         default:           return {};
     }
 }
@@ -401,6 +444,10 @@ const std::vector<TokenInfo>& token_catalog() {
         {"{music_progress}",   "Progress", "track position and duration"},
         {"{timer}",            "Timer",    "stopwatch or countdown"},
         {"{timer_icon}",       "Timer icon", "the session timer icon"},
+        {"{weather_temperature}", "Temperature", "current temperature for the selected city"},
+        {"{weather_icon}",        "Weather icon", "icon for the current condition"},
+        {"{weather_condition}",   "Conditions", "weather description for the selected city"},
+        {"{vrchat_status}",        "VRChat status", "selected read-only status fields"},
         {"{heart_icon}",       "♥ icon",   "the heart icon you set"},
         {"{song_icon}",        "♪ icon",   "the note icon you set"},
         {"{clock}",            "Time",     "local time, e.g. 21:07"},

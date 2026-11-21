@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <algorithm>
 #include <utility>
@@ -204,6 +205,11 @@ AppWindow::AppWindow(AdwApplication* app)
     if (!settings_.pulsoid_token.empty()) pulsoid_.start();
 
     window_ = adw_application_window_new(GTK_APPLICATION(app));
+    g_object_add_weak_pointer(G_OBJECT(window_), reinterpret_cast<gpointer*>(&window_));
+    g_signal_connect(window_, "close-request", G_CALLBACK(+[](GtkWindow*, gpointer data) -> gboolean {
+        static_cast<AppWindow*>(data)->vrchat_listener_.stop();
+        return FALSE;
+    }), this);
     gtk_window_set_title(GTK_WINDOW(window_), "cadence");
     gtk_window_set_default_size(GTK_WINDOW(window_), 680, 680);
 
@@ -245,7 +251,7 @@ AppWindow::AppWindow(AdwApplication* app)
     adw_application_window_set_content(ADW_APPLICATION_WINDOW(window_),
                                        GTK_WIDGET(toast_overlay_));
 
-    apply_animation_setting();
+    reset_vrchat_listener();
     refresh_preview(true);
     restart_timer();
     gtk_window_present(GTK_WINDOW(window_));
@@ -330,11 +336,7 @@ GtkWidget* AppWindow::build_preview_card() {
     gtk_label_set_justify(GTK_LABEL(preview_label_), GTK_JUSTIFY_CENTER);
     gtk_label_set_xalign(GTK_LABEL(preview_label_), 0.5);
 
-    preview_revealer_ = gtk_revealer_new();
-    gtk_revealer_set_child(GTK_REVEALER(preview_revealer_), preview_label_);
-    gtk_revealer_set_transition_type(GTK_REVEALER(preview_revealer_), GTK_REVEALER_TRANSITION_TYPE_CROSSFADE);
-    gtk_revealer_set_reveal_child(GTK_REVEALER(preview_revealer_), TRUE);
-    gtk_box_append(GTK_BOX(card), preview_revealer_);
+    gtk_box_append(GTK_BOX(card), preview_label_);
     return card;
 }
 
@@ -424,18 +426,20 @@ GtkWidget* AppWindow::build_chatbox_page() {
 
 void AppWindow::create_source_row(int component) {
     static const char* titles[COMP_COUNT] = {
-        "Heart Rate", "Music", "Clock", "Custom Text", "Battery", "System Stats", "Session Timer"
+        "Heart Rate", "Music", "Clock", "Custom Text", "Battery", "System Stats", "Session Timer", "Weather", "VRChat Status"
     };
     static const char* icons[COMP_COUNT] = {
         "emblem-favorite-symbolic", "audio-x-generic-symbolic", "preferences-system-time-symbolic",
         "accessories-text-editor-symbolic", "battery-symbolic", "utilities-system-monitor-symbolic",
-        "alarm-symbolic",
+        "alarm-symbolic", "weather-clear-symbolic", "input-gaming-symbolic",
     };
     static constexpr bool AppSettings::*enabled[COMP_COUNT] = {
         &AppSettings::show_heart_component, &AppSettings::show_song_component,
         &AppSettings::show_clock_component, &AppSettings::show_custom_component,
         &AppSettings::show_battery_component, &AppSettings::show_system_component,
         &AppSettings::show_timer_component,
+        &AppSettings::show_weather_component,
+        &AppSettings::show_vrchat_component,
     };
     auto& source = sources_[component];
     source.enabled = enabled[component];
@@ -475,7 +479,8 @@ void AppWindow::create_source_row(int component) {
         adw_expander_row_add_row(row, field);
     };
 
-    toggle("Include in Chatbox", source.enabled);
+    if (component != COMP_WEATHER && component != COMP_VRCHAT)
+        toggle("Include in Chatbox", source.enabled);
     switch (component) {
         case COMP_HEART: {
             toggle("Current BPM", &AppSettings::show_bpm_current);
@@ -572,10 +577,172 @@ void AppWindow::create_source_row(int component) {
             entry("Icon", &AppSettings::timer_icon);
             break;
         }
+        case COMP_WEATHER:
+            add_weather_settings(row);
+            break;
+        case COMP_VRCHAT:
+            adw_expander_row_add_row(row, state_row("Include in Chatbox",
+                "Listen for your own status via VRChat's local OSC output",
+                settings_.show_vrchat_component, [this, changed](bool enabled) {
+                    settings_.show_vrchat_component = enabled;
+                    reset_vrchat_listener();
+                    changed();
+                }));
+            toggle("Mic Mute State", &AppSettings::vrchat_show_mic);
+            toggle("Earmuff Mode", &AppSettings::vrchat_show_earmuffs);
+            toggle("Left Hand Gesture", &AppSettings::vrchat_show_left);
+            toggle("Right Hand Gesture", &AppSettings::vrchat_show_right);
+            toggle("Movement Speed", &AppSettings::vrchat_show_speed);
+            adw_expander_row_add_row(row, state_row("Only Show Active States",
+                "Hide unmuted mic, off earmuffs, neutral gestures, and zero speed",
+                settings_.vrchat_active_only, [this, changed](bool enabled) {
+                    settings_.vrchat_active_only = enabled;
+                    changed();
+                }));
+            adw_expander_row_add_row(row, combo_row("Speed Units", nullptr,
+                {"Meters per second", "Kilometers per hour", "Miles per hour"},
+                static_cast<int>(settings_.vrchat_speed_units), [this, changed](int index) {
+                    if (index < 0 || index > 2) return;
+                    settings_.vrchat_speed_units = static_cast<SpeedUnits>(index);
+                    changed();
+                }));
+            entry("Field Separator", &AppSettings::vrchat_separator);
+            break;
         default:
             break;
     }
     gtk_list_box_append(GTK_LIST_BOX(component_list_), source.row);
+}
+
+void AppWindow::add_weather_settings(AdwExpanderRow* row) {
+    adw_expander_row_add_row(row, state_row("Include in Chatbox", "Only checks weather for a city you select",
+        settings_.show_weather_component, [this](bool value) {
+            settings_.show_weather_component = value;
+            reset_weather();
+        }));
+
+    GtkWidget* city = entry_row("City Name", "");
+    GtkWidget* search = gtk_button_new_with_label("Search");
+    gtk_widget_set_valign(search, GTK_ALIGN_CENTER);
+    adw_entry_row_add_suffix(ADW_ENTRY_ROW(city), search);
+    adw_expander_row_add_row(row, city);
+
+    weather_results_row_ = combo_row("Matching Cities", "Search for a city first", {"Select a city"}, 0,
+        [this](int index) {
+            if (index < 1 || static_cast<size_t>(index) > weather_results_.size()) return;
+            settings_.weather_place = weather_results_[index - 1];
+            reset_weather();
+        });
+    adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(weather_results_row_), FALSE);
+    adw_expander_row_add_row(row, weather_results_row_);
+
+    auto clear_results = [this] {
+        weather_results_.clear();
+        const char* labels[] = {"Select a city", nullptr};
+        GtkStringList* model = gtk_string_list_new(labels);
+        adw_combo_row_set_model(ADW_COMBO_ROW(weather_results_row_), G_LIST_MODEL(model));
+        g_object_unref(model);
+        adw_combo_row_set_selected(ADW_COMBO_ROW(weather_results_row_), 0);
+    };
+    on_click(search, [this, city, search, clear_results] {
+        std::string query = gtk_editable_get_text(GTK_EDITABLE(city));
+        const auto first = query.find_first_not_of(" \t\r\n");
+        query = first == std::string::npos ? "" : query.substr(first, query.find_last_not_of(" \t\r\n") - first + 1);
+        clear_results();
+        if (query.empty() || g_utf8_strlen(query.c_str(), -1) > 100) {
+            adw_action_row_set_subtitle(ADW_ACTION_ROW(weather_results_row_), "Enter a city name (up to 100 characters)");
+            return;
+        }
+        gtk_widget_set_sensitive(search, FALSE);
+        adw_action_row_set_subtitle(ADW_ACTION_ROW(weather_results_row_), "Searching…");
+        search_weather_city(query, [this, search](std::vector<WeatherPlace> places, std::string error) {
+            if (!window_) return;
+            gtk_widget_set_sensitive(search, TRUE);
+            if (!error.empty() || places.empty()) {
+                adw_action_row_set_subtitle(ADW_ACTION_ROW(weather_results_row_),
+                    error.empty() ? "No matching cities" : error.c_str());
+                return;
+            }
+            GtkStringList* model = gtk_string_list_new(nullptr);
+            gtk_string_list_append(model, "Select a city");
+            for (const auto& place : places) gtk_string_list_append(model, place.label.c_str());
+            auto* row = ADW_COMBO_ROW(weather_results_row_);
+            // The placeholder stays selected: even a single match is never picked automatically.
+            adw_combo_row_set_model(row, G_LIST_MODEL(model));
+            adw_combo_row_set_selected(row, 0);
+            g_object_unref(model);
+            weather_results_ = std::move(places);
+            adw_action_row_set_subtitle(ADW_ACTION_ROW(row), "Choose the city and region you want");
+        });
+    });
+
+    weather_city_row_ = adw_action_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(weather_city_row_), "Selected City");
+    adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(weather_city_row_), FALSE);
+    weather_clear_button_ = gtk_button_new_with_label("Clear");
+    gtk_widget_set_valign(weather_clear_button_, GTK_ALIGN_CENTER);
+    adw_action_row_add_suffix(ADW_ACTION_ROW(weather_city_row_), weather_clear_button_);
+    on_click(weather_clear_button_, [this] {
+        settings_.weather_place = {};
+        adw_combo_row_set_selected(ADW_COMBO_ROW(weather_results_row_), 0);
+        reset_weather();
+    });
+    adw_expander_row_add_row(row, weather_city_row_);
+
+    adw_expander_row_add_row(row, combo_row("Temperature Units", "Alternating units switch every 10 seconds",
+        {"Celsius (°C)", "Fahrenheit (°F)", "Alternate °C / °F"}, static_cast<int>(settings_.weather_units),
+        [this](int units) {
+            if (units < 0 || units > 2) return;
+            settings_.weather_units = static_cast<WeatherUnits>(units);
+            weather_cycle_start_ = g_get_monotonic_time();
+            settings_.save();
+            refresh_preview();
+        }));
+    adw_expander_row_add_row(row, state_row("Show Weather Icon", nullptr, settings_.weather_show_icon,
+        [this](bool value) { settings_.weather_show_icon = value; settings_.save(); refresh_preview(); }));
+    adw_expander_row_add_row(row, state_row("Show Condition", "Add text like Sunny, Rain, or Snow",
+        settings_.weather_show_condition,
+        [this](bool value) { settings_.weather_show_condition = value; settings_.save(); refresh_preview(); }));
+
+    GtkWidget* provider = adw_action_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(provider), "Weather Data");
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(provider), "Looks up the city you pick, not your current location");
+    GtkWidget* link = gtk_link_button_new_with_label("https://open-meteo.com/", "Open-Meteo");
+    gtk_widget_set_valign(link, GTK_ALIGN_CENTER);
+    adw_action_row_add_suffix(ADW_ACTION_ROW(provider), link);
+    adw_expander_row_add_row(row, provider);
+}
+
+void AppWindow::reset_weather() {
+    ++weather_generation_;
+    weather_reading_.reset();
+    weather_error_.clear();
+    weather_next_request_ = weather_last_success_ = 0;
+    weather_cycle_start_ = g_get_monotonic_time();
+    settings_.save();
+    refresh_preview();
+}
+
+void AppWindow::refresh_weather(gint64 now) {
+    if (!settings_.show_weather_component || !settings_.weather_place.valid() ||
+        weather_loading_ || now < weather_next_request_) return;
+    weather_loading_ = true;
+    const auto generation = weather_generation_;
+    fetch_weather(settings_.weather_place, [this, generation](std::optional<WeatherReading> reading, std::string error) {
+        if (!window_) return;
+        weather_loading_ = false;
+        if (generation == weather_generation_) {
+            const auto now = g_get_monotonic_time();
+            weather_next_request_ = now + (reading ? 15 : 5) * 60 * G_USEC_PER_SEC;
+            weather_error_ = std::move(error);
+            if (reading) {
+                if (!weather_reading_) weather_cycle_start_ = now;
+                weather_reading_ = std::move(reading);
+                weather_last_success_ = now;
+            }
+        }
+        refresh_preview();
+    });
 }
 
 void AppWindow::update_move_buttons() {
@@ -674,12 +841,110 @@ GtkWidget* AppWindow::build_settings_menu() {
     add_check("Box drawing", settings_.box_drawing, [this](bool v) {
         settings_.box_drawing = v; settings_.save(); refresh_preview();
     });
-    add_check("Animations", settings_.animations_enabled, [this](bool v) {
-        settings_.animations_enabled = v; settings_.save(); apply_animation_setting();
-    });
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    const char* running_appimage = g_getenv("APPIMAGE");
+    const char* installer = g_getenv("CADENCE_INSTALLER");
+    if (running_appimage && g_path_is_absolute(running_appimage) &&
+        installer && g_path_is_absolute(installer) && g_file_test(installer, G_FILE_TEST_IS_EXECUTABLE)) {
+        GtkWidget* update = gtk_button_new_with_label("Update This AppImage");
+        gtk_widget_add_css_class(update, "flat");
+        on_click(update, [this, popover, path = std::string(running_appimage), script = std::string(installer)] {
+            gtk_popover_popdown(GTK_POPOVER(popover));
+            confirm_appimage_update(path, script);
+        });
+        gtk_box_append(GTK_BOX(box), update);
+    } else {
+        GtkWidget* updates = gtk_link_button_new_with_label(
+            "https://github.com/MORT1SXD/cadence-linux/releases/latest", "Check for Updates");
+        gtk_widget_set_tooltip_text(updates, "Open the latest release on GitHub");
+        gtk_box_append(GTK_BOX(box), updates);
+    }
 
     gtk_popover_set_child(GTK_POPOVER(popover), box);
     return popover;
+}
+
+void AppWindow::confirm_appimage_update(std::string path, std::string installer) {
+    auto toast = [this](const char* text) {
+        adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), adw_toast_new(text));
+    };
+    if (update_running_) {
+        toast("An AppImage update is already running");
+        return;
+    }
+    std::error_code error;
+    const auto target = std::filesystem::canonical(path, error);
+    if (error || !std::filesystem::is_regular_file(target, error)) {
+        toast("Could not locate the running AppImage");
+        return;
+    }
+
+    GtkWidget* parent = window_;
+    auto* dialog = ADW_ALERT_DIALOG(adw_alert_dialog_new("Update This AppImage?", nullptr));
+    gchar* display_path = g_filename_display_name(target.c_str());
+    adw_alert_dialog_format_body(dialog,
+        "Download the latest published release and replace this file?\n\n%s\n\n"
+        "A development build may be newer than the release. Your settings are kept.", display_path);
+    g_free(display_path);
+    adw_alert_dialog_add_responses(dialog, "cancel", "Cancel", "update", "Download and Replace", nullptr);
+    adw_alert_dialog_set_response_appearance(dialog, "update", ADW_RESPONSE_SUGGESTED);
+    adw_alert_dialog_set_default_response(dialog, "cancel");
+    adw_alert_dialog_set_close_response(dialog, "cancel");
+    using Update = std::function<void()>;
+    g_signal_connect_data(dialog, "response::update",
+        G_CALLBACK(+[](AdwAlertDialog*, const char*, gpointer data) { (*static_cast<Update*>(data))(); }),
+        new Update([this, path = target.string(), installer = std::move(installer)] {
+            run_appimage_update(path, installer);
+        }), +[](gpointer data, GClosure*) { delete static_cast<Update*>(data); },
+        static_cast<GConnectFlags>(0));
+    adw_dialog_present(ADW_DIALOG(dialog), parent);
+}
+
+void AppWindow::run_appimage_update(const std::string& path, const std::string& installer) {
+    if (update_running_) return;
+    auto* launcher = g_subprocess_launcher_new(static_cast<GSubprocessFlags>(
+        G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE));
+    // The installer runs host tools, not executables linked against the AppImage.
+    g_subprocess_launcher_unsetenv(launcher, "LD_LIBRARY_PATH");
+    GError* error = nullptr;
+    const char* args[] = {installer.c_str(), "--replace", path.c_str(), nullptr};
+    GSubprocess* process = g_subprocess_launcher_spawnv(launcher, args, &error);
+    g_object_unref(launcher);
+    if (!process) {
+        g_clear_error(&error);
+        adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), adw_toast_new("Could not start the installer"));
+        return;
+    }
+    update_running_ = true;
+    adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), adw_toast_new("Downloading the latest release…"));
+    g_subprocess_communicate_utf8_async(process, nullptr, nullptr,
+        +[](GObject* object, GAsyncResult* result, gpointer data) {
+            auto& window = *static_cast<AppWindow*>(data);
+            auto* process = G_SUBPROCESS(object);
+            gchar* output = nullptr;
+            gchar* diagnostic = nullptr;
+            GError* error = nullptr;
+            const bool complete = g_subprocess_communicate_utf8_finish(process, result, &output, &diagnostic, &error);
+            window.update_running_ = false;
+            if (window.window_) {
+                if (complete && g_subprocess_get_successful(process)) {
+                    const bool current = output && g_strstr_len(output, -1, "Already up to date.");
+                    adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(window.toast_overlay_),
+                        adw_toast_new(current ? "Cadence is already up to date" : "Updated. Quit and reopen Cadence."));
+                } else {
+                    auto* dialog = ADW_ALERT_DIALOG(adw_alert_dialog_new("Could Not Update", nullptr));
+                    const char* reason = diagnostic && *diagnostic ? diagnostic :
+                        "Download the latest AppImage from GitHub and try again.";
+                    adw_alert_dialog_set_body(dialog, reason);
+                    adw_alert_dialog_add_response(dialog, "close", "Close");
+                    adw_dialog_present(ADW_DIALOG(dialog), window.window_);
+                }
+            }
+            g_free(output);
+            g_free(diagnostic);
+            g_clear_error(&error);
+        }, this);
+    g_object_unref(process);
 }
 
 GtkWidget* AppWindow::build_connect_page() {
@@ -688,9 +953,12 @@ GtkWidget* AppWindow::build_connect_page() {
     AdwPreferencesGroup* vg = group("VRChat OSC", "Where chatbox messages are sent.");
     GtkWidget* port = spin_row("Input port", "VRChat's default is 9000.",
                                1, 65535, 1, settings_.osc_port, [this](int v) {
+        const bool was_same_port = settings_.osc_port == settings_.vrchat_status_port;
         settings_.osc_port = v;
         osc_sender_.set_port((uint16_t)v);
         settings_.save();
+        if (was_same_port || v == settings_.vrchat_status_port) reset_vrchat_listener();
+        refresh_preview();
     });
     adw_preferences_group_add(vg, port);
     GtkWidget* test_row = adw_action_row_new();
@@ -704,6 +972,23 @@ GtkWidget* AppWindow::build_connect_page() {
     adw_action_row_add_suffix(ADW_ACTION_ROW(test_row), test);
     adw_preferences_group_add(vg, test_row);
     adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), vg);
+
+    auto* status_group = group("VRChat Status", "Read-only. Cadence listens on this computer only when the source is enabled.");
+    adw_preferences_group_add(status_group, spin_row("VRChat Output Port", "VRChat's default is 9001.",
+        1, 65535, 1, settings_.vrchat_status_port, [this](int value) {
+            settings_.vrchat_status_port = value;
+            settings_.save();
+            reset_vrchat_listener();
+            refresh_preview();
+        }));
+    vrchat_listener_row_ = adw_action_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(vrchat_listener_row_), "Local Listener");
+    vrchat_retry_button_ = gtk_button_new_with_label("Retry");
+    gtk_widget_set_valign(vrchat_retry_button_, GTK_ALIGN_CENTER);
+    on_click(vrchat_retry_button_, [this] { reset_vrchat_listener(); refresh_preview(); });
+    adw_action_row_add_suffix(ADW_ACTION_ROW(vrchat_listener_row_), vrchat_retry_button_);
+    adw_preferences_group_add(status_group, vrchat_listener_row_);
+    adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), status_group);
 
     // the setup steps that are easy to miss and impossible to debug from here,
     // so they belong in the app rather than only in a readme
@@ -923,11 +1208,6 @@ void AppWindow::update_discord() {
     }
 }
 
-void AppWindow::apply_animation_setting() {
-    gtk_revealer_set_transition_duration(GTK_REVEALER(preview_revealer_),
-                                          settings_.animations_enabled ? 200 : 0);
-}
-
 void AppWindow::connect_pulsoid(const std::string& token) {
     settings_.pulsoid_token = token;
     settings_.save();
@@ -948,6 +1228,7 @@ void AppWindow::disconnect_pulsoid() {
 }
 
 void AppWindow::on_pulsoid_status(const std::string& status) {
+    if (!window_) return;
     adw_action_row_set_subtitle(ADW_ACTION_ROW(pulsoid_status_row_), status.c_str());
 
     // state classes on the pill rather than inline styling, so css stays the
@@ -1009,8 +1290,38 @@ void AppWindow::refresh_preview(bool send) {
         session_timer_.elapsed(now) > SessionTimer::Seconds::zero() ? "Resume" : "Start";
     if (g_strcmp0(gtk_button_get_label(GTK_BUTTON(timer_action_)), timer_action) != 0)
         gtk_button_set_label(GTK_BUTTON(timer_action_), timer_action);
+
+    const gint64 weather_now = g_get_monotonic_time();
+    if (weather_reading_ && weather_now - weather_last_success_ > 45LL * 60 * G_USEC_PER_SEC)
+        weather_reading_.reset();
+    refresh_weather(weather_now);
+    const bool has_city = settings_.weather_place.valid();
+    std::string city_status = has_city ? settings_.weather_place.label : "No city selected";
+    if (has_city && settings_.show_weather_component) {
+        if (weather_loading_ && !weather_reading_) city_status += " · Checking weather…";
+        else if (!weather_error_.empty()) city_status += " · " + weather_error_;
+    }
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(weather_city_row_), city_status.c_str());
+    gtk_widget_set_sensitive(weather_clear_button_, has_city);
+    std::optional<WeatherDisplay> weather;
+    if (settings_.show_weather_component && weather_reading_) {
+        const bool alternate_phase = ((weather_now - weather_cycle_start_) / (10 * G_USEC_PER_SEC)) % 2 != 0;
+        weather = display_weather(*weather_reading_, settings_.weather_units, alternate_phase);
+    }
+    const auto vrchat = vrchat_listener_.snapshot(g_get_monotonic_time());
+    const bool has_vrchat_state = vrchat.muted || vrchat.earmuffs || vrchat.left_gesture ||
+                                  vrchat.right_gesture || vrchat.speed;
+    const bool same_port = settings_.osc_port == settings_.vrchat_status_port;
+    const std::string vrchat_status = !settings_.show_vrchat_component ? "Off" :
+        same_port ? "Use different ports for sending and receiving" :
+        !vrchat_listener_.error().empty() ? vrchat_listener_.error() :
+        has_vrchat_state ? "Receiving status from local OSC" : "Waiting for VRChat status";
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(vrchat_listener_row_), vrchat_status.c_str());
+    gtk_widget_set_sensitive(vrchat_retry_button_,
+        settings_.show_vrchat_component && !same_port && !vrchat_listener_.listening());
     const TemplateData data{&last_hr_, last_track_ ? &*last_track_ : nullptr,
-                            &last_clock_, &last_battery_, &last_system_, timer};
+                            &last_clock_, &last_battery_, &last_system_, timer,
+                            weather ? &*weather : nullptr, &vrchat};
 
     preview_text_ = render_chatbox(data, settings_);
     const auto& text = preview_text_;
@@ -1038,6 +1349,14 @@ void AppWindow::refresh_preview(bool send) {
                 case COMP_SYSTEM:
                     summary = settings_.system_show_cpu || settings_.system_show_memory
                         ? "Waiting for system readings" : "No metrics selected";
+                    break;
+                case COMP_WEATHER:
+                    if (!has_city) summary = "Choose a city";
+                    else if (weather_loading_) summary = "Checking weather…";
+                    else summary = weather_error_.empty() ? "No current weather available" : weather_error_;
+                    break;
+                case COMP_VRCHAT:
+                    summary = has_vrchat_state ? "No selected fields to show" : vrchat_status;
                     break;
                 default: break;
             }
@@ -1067,8 +1386,17 @@ void AppWindow::refresh_preview(bool send) {
     update_discord();
 }
 
+void AppWindow::reset_vrchat_listener() {
+    if (settings_.show_vrchat_component && settings_.osc_port != settings_.vrchat_status_port)
+        vrchat_listener_.start(settings_.vrchat_status_port);
+    else
+        vrchat_listener_.stop();
+}
+
 gboolean AppWindow::on_tick(gpointer user_data) {
-    static_cast<AppWindow*>(user_data)->refresh_preview(true);
+    auto* self = static_cast<AppWindow*>(user_data);
+    if (!self->window_) return G_SOURCE_REMOVE;
+    self->refresh_preview(true);
     return G_SOURCE_CONTINUE;
 }
 

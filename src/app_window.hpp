@@ -23,13 +23,25 @@ public:
 private:
     GtkWidget* window_ = nullptr;
     GtkWidget* preview_label_ = nullptr;
-    GtkWidget* preview_revealer_ = nullptr;
     GtkWidget* stats_label_ = nullptr;
     GtkWidget* pause_button_ = nullptr;
     GtkWidget* copy_button_ = nullptr;
     GtkWidget* send_once_button_ = nullptr;
     GtkWidget* timer_action_ = nullptr;
     GtkWidget* timer_status_ = nullptr;
+    GtkWidget* weather_city_row_ = nullptr;
+    GtkWidget* weather_results_row_ = nullptr;
+    GtkWidget* weather_clear_button_ = nullptr;
+    GtkWidget* vrchat_listener_row_ = nullptr;
+    GtkWidget* vrchat_retry_button_ = nullptr;
+    std::vector<WeatherPlace> weather_results_;
+    std::optional<WeatherReading> weather_reading_;
+    std::string weather_error_;
+    bool weather_loading_ = false;
+    unsigned weather_generation_ = 0;
+    gint64 weather_next_request_ = 0;
+    gint64 weather_last_success_ = 0;
+    gint64 weather_cycle_start_ = 0;
     GtkWidget* pulsoid_pill_ = nullptr;
     GtkWidget* osc_pill_ = nullptr;
     GtkWidget* pulsoid_status_row_ = nullptr;
@@ -45,6 +57,7 @@ private:
     // set while writing settings back into widgets, so the handler that opened
     // the privacy dialog isn't re-entered by the update it triggers
     bool updating_ui_ = false;
+    bool update_running_ = false;
 
     GtkWidget* component_list_ = nullptr;
     struct SourceRow {
@@ -71,6 +84,7 @@ private:
     OscSender osc_sender_;
     PulsoidClient pulsoid_;
     MediaReader media_;
+    VrchatStatusListener vrchat_listener_;
 
     std::atomic<int> latest_bpm_{0};
     std::atomic<int> min_bpm_{std::numeric_limits<int>::max()};
@@ -93,15 +107,20 @@ private:
     void add_pulsoid_connection(AdwPreferencesPage* page);
     GtkWidget* build_connect_page();
     GtkWidget* build_settings_menu();
+    void confirm_appimage_update(std::string path, std::string installer);
+    void run_appimage_update(const std::string& path, const std::string& installer);
 
     void create_source_row(int component);
+    void add_weather_settings(AdwExpanderRow* row);
+    void reset_weather();
+    void refresh_weather(gint64 now);
+    void reset_vrchat_listener();
     void move_component(int component, int direction);
     void update_move_buttons();
 
     void refresh_preview(bool send = false);
     SessionTimer::Seconds timer_limit() const;
     void send_message(const std::string& text, bool manual = false);
-    void apply_animation_setting();
     void restart_timer();
     void reset_session_stats();
     int smoothed_bpm() const;

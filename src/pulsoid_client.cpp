@@ -1,10 +1,10 @@
 #include "pulsoid_client.hpp"
+#include "system_ca.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 #include <libwebsockets.h>
 #include <string_view>
-#include <unistd.h>
 
 namespace cadence {
 
@@ -22,17 +22,6 @@ int extract_heart_rate(const std::string& payload) {
     pos = payload.find(':', pos);
     if (pos == std::string::npos) return -1;
     return std::atoi(payload.c_str() + pos + 1);
-}
-
-// The AppImage's OpenSSL was built on Ubuntu. Its compiled-in CA path
-// need not exist on the machine running the AppImage.
-const char* host_ca_bundle() {
-    if (const char* path = std::getenv("SSL_CERT_FILE"); path && *path) return path;
-    for (const char* path : {"/etc/ssl/certs/ca-certificates.crt",
-                             "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/cert.pem"}) {
-        if (access(path, R_OK) == 0) return path;
-    }
-    return nullptr;
 }
 
 } // namespace

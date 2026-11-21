@@ -1,4 +1,6 @@
 #pragma once
+#include "weather_source.hpp"
+#include "vrchat_status.hpp"
 #include <string>
 #include <vector>
 
@@ -14,6 +16,8 @@ enum Component {
     COMP_BATTERY = 4,
     COMP_SYSTEM = 5,
     COMP_TIMER = 6,
+    COMP_WEATHER = 7,
+    COMP_VRCHAT = 8,
     COMP_COUNT,
 };
 
@@ -31,7 +35,7 @@ struct AppSettings {
     // layout. the chatbox is a list of independent blocks; this is their
     // display order, top to bottom. values are Component ids.
     std::vector<int> component_order = {
-        COMP_CLOCK, COMP_HEART, COMP_SONG, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER
+        COMP_CLOCK, COMP_HEART, COMP_SONG, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER, COMP_WEATHER, COMP_VRCHAT
     };
 
     // heart rate component
@@ -79,9 +83,24 @@ struct AppSettings {
     int timer_minutes = 5;
     std::string timer_icon = "⏱";
 
+    bool show_weather_component = false;
+    WeatherPlace weather_place;
+    WeatherUnits weather_units = WeatherUnits::Celsius;
+    bool weather_show_icon = true;
+    bool weather_show_condition = true;
+
+    bool show_vrchat_component = false;
+    bool vrchat_show_mic = true;
+    bool vrchat_show_earmuffs = true;
+    bool vrchat_show_left = false;
+    bool vrchat_show_right = false;
+    bool vrchat_show_speed = false;
+    bool vrchat_active_only = false;
+    SpeedUnits vrchat_speed_units = SpeedUnits::MetersPerSecond;
+    std::string vrchat_separator = " · ";
+
     // display
     bool box_drawing = false;
-    bool animations_enabled = true;
     bool compact_layout = false;
     std::string compact_separator = " · ";
 
@@ -102,6 +121,7 @@ struct AppSettings {
     // connections
     std::string pulsoid_token;
     int osc_port = 9000;
+    int vrchat_status_port = 9001;
 
     // discord rich presence.
     //

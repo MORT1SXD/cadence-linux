@@ -21,8 +21,8 @@ Linux desktop app that sends text through VRChat’s built-in OSC input.
    world. In Cadence, open **Connectivity → Send Test** to check it.
 
 The AppImage includes GTK, libadwaita, and libwebsockets. If FUSE isn’t available,
-run it with `--appimage-extract-and-run`. See the [user guide](docs/README.md)
-for setup and troubleshooting.
+run it with `--appimage-extract-and-run`. For a desktop launcher and easy
+updates, see the [install script](docs/install.md).
 
 ## Make it yours
 
@@ -31,8 +31,9 @@ give each one its own line, or put everything on one line. Pause automatic
 updates while you edit, then **Send Once** to try the preview in-game.
 
 Music comes from MPRIS and heart rate from Pulsoid. Clock, session timer,
-battery, CPU/RAM, and custom text all work without an account. Discord sharing
-is optional and off by default.
+battery, CPU/RAM, and custom text all work offline. Weather is optional and uses
+a city you choose, never location detection. Discord sharing is off by default.
+VRChat Status can show mic mute, gestures, and movement using local OSC.
 
 [Build from source](docs/build.md) · [User guide](docs/README.md) · [MIT License](LICENSE)
 

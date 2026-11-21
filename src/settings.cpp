@@ -4,6 +4,7 @@
 #include <charconv>
 #include <filesystem>
 #include <glib.h>
+#include <limits>
 
 namespace cadence {
 
@@ -81,9 +82,7 @@ AppSettings AppSettings::load() {
         if (s.component_order.empty()) {
             // migrate the old two-block layout key
             const bool heart_first = get_bool(kf, "layout", "heart_first", true);
-            s.component_order = heart_first
-                ? std::vector<int>{COMP_HEART, COMP_SONG, COMP_CLOCK, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER}
-                : std::vector<int>{COMP_SONG, COMP_HEART, COMP_CLOCK, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER};
+            s.component_order = parse_order(heart_first ? "0,1,2" : "1,0,2");
         }
 
         s.show_heart_component = get_bool(kf, "heart", "enabled", s.show_heart_component);
@@ -124,11 +123,38 @@ AppSettings AppSettings::load() {
         s.timer_minutes = std::clamp(get_int(kf, "timer", "minutes", s.timer_minutes), 1, 180);
         s.timer_icon = get_string(kf, "timer", "icon", s.timer_icon);
 
+        s.show_weather_component = get_bool(kf, "weather", "enabled", s.show_weather_component);
+        s.weather_show_icon = get_bool(kf, "weather", "show_icon", s.weather_show_icon);
+        s.weather_show_condition = get_bool(kf, "weather", "show_condition", s.weather_show_condition);
+        const auto unit = get_string(kf, "weather", "units", "celsius");
+        if (unit == "fahrenheit") s.weather_units = WeatherUnits::Fahrenheit;
+        if (unit == "alternate") s.weather_units = WeatherUnits::Alternate;
+        auto coordinate = [kf](const char* key) {
+            GError* error = nullptr;
+            const double value = g_key_file_get_double(kf, "weather", key, &error);
+            if (!error) return value;
+            g_error_free(error);
+            return std::numeric_limits<double>::quiet_NaN();
+        };
+        WeatherPlace place{get_string(kf, "weather", "city", ""), coordinate("latitude"), coordinate("longitude")};
+        if (place.valid()) s.weather_place = place;
+
+        s.show_vrchat_component = get_bool(kf, "vrchat_status", "enabled", s.show_vrchat_component);
+        s.vrchat_show_mic = get_bool(kf, "vrchat_status", "show_mic", s.vrchat_show_mic);
+        s.vrchat_show_earmuffs = get_bool(kf, "vrchat_status", "show_earmuffs", s.vrchat_show_earmuffs);
+        s.vrchat_show_left = get_bool(kf, "vrchat_status", "show_left", s.vrchat_show_left);
+        s.vrchat_show_right = get_bool(kf, "vrchat_status", "show_right", s.vrchat_show_right);
+        s.vrchat_show_speed = get_bool(kf, "vrchat_status", "show_speed", s.vrchat_show_speed);
+        s.vrchat_active_only = get_bool(kf, "vrchat_status", "active_only", s.vrchat_active_only);
+        s.vrchat_separator = get_string(kf, "vrchat_status", "separator", s.vrchat_separator);
+        const auto speed_unit = get_string(kf, "vrchat_status", "speed_units", "m/s");
+        if (speed_unit == "km/h") s.vrchat_speed_units = SpeedUnits::KilometersPerHour;
+        if (speed_unit == "mph") s.vrchat_speed_units = SpeedUnits::MilesPerHour;
+
         s.compact_layout = get_bool(kf, "layout", "compact", s.compact_layout);
         s.compact_separator = get_string(kf, "layout", "separator", s.compact_separator);
 
         s.box_drawing = get_bool(kf, "display", "box_drawing", s.box_drawing);
-        s.animations_enabled = get_bool(kf, "display", "animations_enabled", s.animations_enabled);
 
         s.notification_sfx = get_bool(kf, "output", "notification_sfx", s.notification_sfx);
         s.send_interval_ms = get_int(kf, "output", "send_interval_ms", s.send_interval_ms);
@@ -138,6 +164,7 @@ AppSettings AppSettings::load() {
 
         s.pulsoid_token = get_string(kf, "pulsoid", "token", s.pulsoid_token);
         s.osc_port = get_int(kf, "osc", "port", s.osc_port);
+        s.vrchat_status_port = std::clamp(get_int(kf, "osc", "status_port", s.vrchat_status_port), 1, 65535);
 
         s.discord_acknowledged = get_bool(kf, "discord", "acknowledged", s.discord_acknowledged);
         s.discord_music = get_bool(kf, "discord", "music", s.discord_music);
@@ -204,8 +231,30 @@ void AppSettings::save() const {
     g_key_file_set_integer(kf, "timer", "minutes", timer_minutes);
     g_key_file_set_string(kf, "timer", "icon", timer_icon.c_str());
 
+    g_key_file_set_boolean(kf, "weather", "enabled", show_weather_component);
+    g_key_file_set_boolean(kf, "weather", "show_icon", weather_show_icon);
+    g_key_file_set_boolean(kf, "weather", "show_condition", weather_show_condition);
+    g_key_file_set_string(kf, "weather", "units", weather_units == WeatherUnits::Fahrenheit ? "fahrenheit" :
+                          weather_units == WeatherUnits::Alternate ? "alternate" : "celsius");
+    if (weather_place.valid()) {
+        g_key_file_set_string(kf, "weather", "city", weather_place.label.c_str());
+        g_key_file_set_double(kf, "weather", "latitude", weather_place.latitude);
+        g_key_file_set_double(kf, "weather", "longitude", weather_place.longitude);
+    }
+
+    g_key_file_set_boolean(kf, "vrchat_status", "enabled", show_vrchat_component);
+    g_key_file_set_boolean(kf, "vrchat_status", "show_mic", vrchat_show_mic);
+    g_key_file_set_boolean(kf, "vrchat_status", "show_earmuffs", vrchat_show_earmuffs);
+    g_key_file_set_boolean(kf, "vrchat_status", "show_left", vrchat_show_left);
+    g_key_file_set_boolean(kf, "vrchat_status", "show_right", vrchat_show_right);
+    g_key_file_set_boolean(kf, "vrchat_status", "show_speed", vrchat_show_speed);
+    g_key_file_set_boolean(kf, "vrchat_status", "active_only", vrchat_active_only);
+    g_key_file_set_string(kf, "vrchat_status", "separator", vrchat_separator.c_str());
+    g_key_file_set_string(kf, "vrchat_status", "speed_units",
+        vrchat_speed_units == SpeedUnits::KilometersPerHour ? "km/h" :
+        vrchat_speed_units == SpeedUnits::MilesPerHour ? "mph" : "m/s");
+
     g_key_file_set_boolean(kf, "display", "box_drawing", box_drawing);
-    g_key_file_set_boolean(kf, "display", "animations_enabled", animations_enabled);
 
     g_key_file_set_boolean(kf, "output", "notification_sfx", notification_sfx);
     g_key_file_set_integer(kf, "output", "send_interval_ms", send_interval_ms);
@@ -213,6 +262,7 @@ void AppSettings::save() const {
 
     g_key_file_set_string(kf, "pulsoid", "token", pulsoid_token.c_str());
     g_key_file_set_integer(kf, "osc", "port", osc_port);
+    g_key_file_set_integer(kf, "osc", "status_port", vrchat_status_port);
 
     g_key_file_set_boolean(kf, "discord", "acknowledged", discord_acknowledged);
     g_key_file_set_boolean(kf, "discord", "music", discord_music);

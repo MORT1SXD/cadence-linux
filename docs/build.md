@@ -1,13 +1,13 @@
 # Build Cadence from source
 
 You’ll need a C++20 compiler, CMake, pkg-config, GTK 4.12+, libadwaita 1.5+,
-and libwebsockets development files.
+and development files for libwebsockets, libcurl 7.85+, and JSON-GLib.
 
 | Distribution | Dependencies |
 | --- | --- |
-| Arch Linux | `sudo pacman -S base-devel cmake git pkgconf gtk4 libadwaita libwebsockets` |
-| Fedora | `sudo dnf install gcc-c++ cmake git pkgconf-pkg-config gtk4-devel libadwaita-devel libwebsockets-devel` |
-| Debian / Ubuntu | `sudo apt install build-essential cmake git pkg-config libgtk-4-dev libadwaita-1-dev libwebsockets-dev` |
+| Arch Linux | `sudo pacman -S base-devel cmake git pkgconf gtk4 libadwaita libwebsockets curl json-glib` |
+| Fedora | `sudo dnf install gcc-c++ cmake git pkgconf-pkg-config gtk4-devel libadwaita-devel libwebsockets-devel libcurl-devel json-glib-devel` |
+| Debian / Ubuntu | `sudo apt install build-essential cmake git pkg-config libgtk-4-dev libadwaita-1-dev libwebsockets-dev libcurl4-openssl-dev libjson-glib-dev` |
 
 For the Debian/Ubuntu command, use a release with the minimum versions above,
 such as Debian 13 or Ubuntu 24.04. Debian 12 and Ubuntu 22.04 ship older GTK

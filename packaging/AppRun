@@ -5,6 +5,7 @@ appdir=${APPDIR:-$(dirname "$(readlink -f "$0")")}
 export LD_LIBRARY_PATH="$appdir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export XDG_DATA_DIRS="$appdir/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export GSETTINGS_SCHEMA_DIR="$appdir/usr/share/glib-2.0/schemas"
+export CADENCE_INSTALLER="$appdir/usr/libexec/cadence/install.sh"
 
 # The loader cache contains absolute paths. Generate it after mounting so it
 # works both when the image is mounted with FUSE and when it is extracted.

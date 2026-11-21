@@ -19,6 +19,8 @@ struct TemplateData {
     const BatteryInfo* battery = nullptr;
     const SystemInfo* system = nullptr;
     std::string timer;
+    const WeatherDisplay* weather = nullptr;
+    const VrchatStatus* vrchat = nullptr;
 };
 
 // a token the user can drop into their template

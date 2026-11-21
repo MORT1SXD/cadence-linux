@@ -8,6 +8,8 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET "gtk4>=4.12")
 pkg_check_modules(ADW REQUIRED IMPORTED_TARGET "libadwaita-1>=1.5")
 pkg_check_modules(LWS REQUIRED IMPORTED_TARGET libwebsockets)
+pkg_check_modules(CURL REQUIRED IMPORTED_TARGET "libcurl>=7.85")
+pkg_check_modules(JSON_GLIB REQUIRED IMPORTED_TARGET json-glib-1.0)
 
 # Discord rich presence. The app works without it.
 #   cmake .. -DENABLE_DISCORD=OFF
@@ -25,6 +27,8 @@ set(CADENCE_SOURCES
     src/main.cpp
     src/battery_source.cpp
     src/system_source.cpp
+    src/weather_source.cpp
+    src/vrchat_status.cpp
     src/clock_source.cpp
     src/app_window.cpp
     src/osc_sender.cpp
@@ -71,6 +75,7 @@ install(FILES packaging/dev.cadence.app.desktop DESTINATION share/applications)
 install(FILES packaging/dev.cadence.app.svg DESTINATION share/icons/hicolor/scalable/apps)
 install(FILES packaging/dev.cadence.app.metainfo.xml DESTINATION share/metainfo)
 install(FILES LICENSE DESTINATION share/doc/cadence)
+install(PROGRAMS install.sh DESTINATION libexec/cadence)
 
 # Always defined, even when Discord is compiled out, so settings.hpp stays
 # self-contained. Empty by default: nothing identifying is shipped in source.
@@ -78,7 +83,8 @@ target_compile_definitions(cadence PRIVATE
     CADENCE_DISCORD_APP_ID="${CADENCE_DISCORD_APP_ID}")
 
 target_include_directories(cadence PRIVATE src)
-target_link_libraries(cadence PRIVATE PkgConfig::GTK4 PkgConfig::ADW PkgConfig::LWS)
+target_link_libraries(cadence PRIVATE
+    PkgConfig::GTK4 PkgConfig::ADW PkgConfig::LWS PkgConfig::CURL PkgConfig::JSON_GLIB)
 
 if(ENABLE_DISCORD)
     target_compile_definitions(cadence PRIVATE CADENCE_DISCORD=1)
