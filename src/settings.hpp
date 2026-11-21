@@ -18,6 +18,7 @@ enum Component {
     COMP_TIMER = 6,
     COMP_WEATHER = 7,
     COMP_VRCHAT = 8,
+    COMP_LYRICS = 9,
     COMP_COUNT,
 };
 
@@ -35,7 +36,8 @@ struct AppSettings {
     // layout. the chatbox is a list of independent blocks; this is their
     // display order, top to bottom. values are Component ids.
     std::vector<int> component_order = {
-        COMP_CLOCK, COMP_HEART, COMP_SONG, COMP_CUSTOM, COMP_BATTERY, COMP_SYSTEM, COMP_TIMER, COMP_WEATHER, COMP_VRCHAT
+        COMP_CLOCK, COMP_HEART, COMP_SONG, COMP_LYRICS, COMP_CUSTOM, COMP_BATTERY,
+        COMP_SYSTEM, COMP_TIMER, COMP_WEATHER, COMP_VRCHAT
     };
 
     // heart rate component
@@ -98,6 +100,13 @@ struct AppSettings {
     bool vrchat_active_only = false;
     SpeedUnits vrchat_speed_units = SpeedUnits::MetersPerSecond;
     std::string vrchat_separator = " · ";
+
+    bool show_lyrics_component = false;
+    bool lyrics_online = false;
+    bool lyrics_show_icon = true;
+    std::string lyrics_icon = "❝";
+    int lyrics_offset_ms = 0;
+    int lyrics_max_width = 72;
 
     // display
     bool box_drawing = false;

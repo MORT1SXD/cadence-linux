@@ -68,7 +68,9 @@ std::vector<int> parse_order(const std::string& raw) {
     if (out.empty()) return out;
 
     for (int v = COMP_HEART; v < COMP_COUNT; ++v)
-        if (std::find(out.begin(), out.end(), v) == out.end()) out.push_back(v);
+        if (v != COMP_LYRICS && std::find(out.begin(), out.end(), v) == out.end()) out.push_back(v);
+    if (std::find(out.begin(), out.end(), COMP_LYRICS) == out.end())
+        out.insert(std::find(out.begin(), out.end(), COMP_SONG) + 1, COMP_LYRICS);
     return out;
 }
 
@@ -150,6 +152,13 @@ AppSettings AppSettings::load() {
         const auto speed_unit = get_string(kf, "vrchat_status", "speed_units", "m/s");
         if (speed_unit == "km/h") s.vrchat_speed_units = SpeedUnits::KilometersPerHour;
         if (speed_unit == "mph") s.vrchat_speed_units = SpeedUnits::MilesPerHour;
+
+        s.show_lyrics_component = get_bool(kf, "lyrics", "enabled", s.show_lyrics_component);
+        s.lyrics_online = get_bool(kf, "lyrics", "online", s.lyrics_online);
+        s.lyrics_show_icon = get_bool(kf, "lyrics", "show_icon", s.lyrics_show_icon);
+        s.lyrics_icon = get_string(kf, "lyrics", "icon", s.lyrics_icon);
+        s.lyrics_max_width = std::clamp(get_int(kf, "lyrics", "max_width", s.lyrics_max_width), 20, 120);
+        s.lyrics_offset_ms = std::clamp(get_int(kf, "lyrics", "offset_ms", s.lyrics_offset_ms), -5000, 5000);
 
         s.compact_layout = get_bool(kf, "layout", "compact", s.compact_layout);
         s.compact_separator = get_string(kf, "layout", "separator", s.compact_separator);
@@ -253,6 +262,13 @@ void AppSettings::save() const {
     g_key_file_set_string(kf, "vrchat_status", "speed_units",
         vrchat_speed_units == SpeedUnits::KilometersPerHour ? "km/h" :
         vrchat_speed_units == SpeedUnits::MilesPerHour ? "mph" : "m/s");
+
+    g_key_file_set_boolean(kf, "lyrics", "enabled", show_lyrics_component);
+    g_key_file_set_boolean(kf, "lyrics", "online", lyrics_online);
+    g_key_file_set_boolean(kf, "lyrics", "show_icon", lyrics_show_icon);
+    g_key_file_set_string(kf, "lyrics", "icon", lyrics_icon.c_str());
+    g_key_file_set_integer(kf, "lyrics", "max_width", lyrics_max_width);
+    g_key_file_set_integer(kf, "lyrics", "offset_ms", lyrics_offset_ms);
 
     g_key_file_set_boolean(kf, "display", "box_drawing", box_drawing);
 

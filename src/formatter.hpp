@@ -6,6 +6,7 @@
 #include "settings.hpp"
 #include "system_source.hpp"
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace cadence {
@@ -21,6 +22,7 @@ struct TemplateData {
     std::string timer;
     const WeatherDisplay* weather = nullptr;
     const VrchatStatus* vrchat = nullptr;
+    std::string lyric;
 };
 
 // a token the user can drop into their template
@@ -54,6 +56,7 @@ std::string render_template(const std::string& tmpl, const TemplateData& data, c
 // the real entry point: honours a raw template override if one is set,
 // otherwise renders the component layout
 std::string render_chatbox(const TemplateData& data, const AppSettings& st);
+std::string format_lyric(std::string_view lyric, const AppSettings& st);
 
 // one component rendered in isolation, for the layout cards' live samples
 std::string render_component(int component, const TemplateData& data, const AppSettings& st);

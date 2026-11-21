@@ -1,6 +1,7 @@
 #pragma once
 #include "clock_source.hpp"
 #include "formatter.hpp"
+#include "lyrics_source.hpp"
 #include "discord_presence.hpp"
 #include "media_reader.hpp"
 #include "osc_sender.hpp"
@@ -9,6 +10,7 @@
 #include "session_timer.hpp"
 #include <adwaita.h>
 #include <atomic>
+#include <deque>
 #include <gtk/gtk.h>
 #include <limits>
 #include <optional>
@@ -34,6 +36,7 @@ private:
     GtkWidget* weather_clear_button_ = nullptr;
     GtkWidget* vrchat_listener_row_ = nullptr;
     GtkWidget* vrchat_retry_button_ = nullptr;
+    GtkWidget* lyrics_preview_row_ = nullptr;
     std::vector<WeatherPlace> weather_results_;
     std::optional<WeatherReading> weather_reading_;
     std::string weather_error_;
@@ -72,6 +75,18 @@ private:
     // going back out to d-bus for the track
     HeartStats last_hr_{};
     std::optional<TrackInfo> last_track_;
+    struct LyricsCacheEntry {
+        LyricsQuery query;
+        LyricsResult result;
+        gint64 expires;
+    };
+    std::deque<LyricsCacheEntry> lyrics_cache_;
+    std::optional<LyricsQuery> lyrics_query_;
+    LyricsResult lyrics_result_;
+    GCancellable* lyrics_job_ = nullptr;
+    bool lyrics_attempted_ = false;
+    gint64 lyrics_retry_at_ = 0;
+    gint64 lyrics_online_after_ = 0;
     ClockInfo last_clock_;
     BatteryInfo last_battery_;
     SystemSource system_source_;
@@ -112,6 +127,9 @@ private:
 
     void create_source_row(int component);
     void add_weather_settings(AdwExpanderRow* row);
+    void add_lyrics_settings(AdwExpanderRow* row);
+    void reset_lyrics();
+    void refresh_lyrics(gint64 now);
     void reset_weather();
     void refresh_weather(gint64 now);
     void reset_vrchat_listener();

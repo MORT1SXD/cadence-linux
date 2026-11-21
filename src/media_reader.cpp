@@ -1,4 +1,5 @@
 #include "media_reader.hpp"
+#include <utility>
 
 namespace cadence {
 
@@ -8,7 +9,7 @@ constexpr int kRequestTimeoutMs = 300;
 
 // finds an mpris-compatible bus name that is currently playing, falling back
 // to the first mpris player found on the bus if nothing is actively playing
-std::string find_active_player(GDBusConnection* bus) {
+std::pair<std::string, bool> find_active_player(GDBusConnection* bus) {
     GVariant* reply = g_dbus_connection_call_sync(
         bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
         "org.freedesktop.DBus", "ListNames", nullptr, G_VARIANT_TYPE("(as)"),
@@ -43,13 +44,13 @@ std::string find_active_player(GDBusConnection* bus) {
         if (playing) {
             g_variant_iter_free(iter);
             g_variant_unref(reply);
-            return n;
+            return {n, true};
         }
     }
 
     g_variant_iter_free(iter);
     g_variant_unref(reply);
-    return fallback;
+    return {fallback, false};
 }
 
 } // namespace
@@ -65,7 +66,7 @@ MediaReader::~MediaReader() {
 std::optional<TrackInfo> MediaReader::current_track(bool read_progress) {
     if (!bus_) return std::nullopt;
 
-    std::string player = find_active_player(bus_);
+    auto [player, playing] = find_active_player(bus_);
     if (player.empty()) return std::nullopt;
 
     GVariant* reply = g_dbus_connection_call_sync(
@@ -84,6 +85,7 @@ std::optional<TrackInfo> MediaReader::current_track(bool read_progress) {
     }
 
     TrackInfo info;
+    info.playing = playing;
     if (GVariant* title_v = g_variant_lookup_value(metadata, "xesam:title", G_VARIANT_TYPE_STRING)) {
         info.title = g_variant_get_string(title_v, nullptr);
         g_variant_unref(title_v);
@@ -100,11 +102,16 @@ std::optional<TrackInfo> MediaReader::current_track(bool read_progress) {
     }
 
     gint64 length = 0;
-    if (read_progress) g_variant_lookup(metadata, "mpris:length", "x", &length);
+    if (read_progress) {
+        g_variant_lookup(metadata, "mpris:length", "x", &length);
+        if (length >= G_USEC_PER_SEC) info.duration = std::chrono::seconds(length / G_USEC_PER_SEC);
+        const gchar* album = nullptr;
+        if (g_variant_lookup(metadata, "xesam:album", "&s", &album)) info.album = album;
+    }
     g_variant_unref(metadata);
     if (info.title.empty()) return std::nullopt;
 
-    if (read_progress && length >= G_USEC_PER_SEC) {
+    if (read_progress) {
         GVariant* position = g_dbus_connection_call_sync(
             bus_, player.c_str(), "/org/mpris/MediaPlayer2",
             "org.freedesktop.DBus.Properties", "Get",
@@ -115,9 +122,9 @@ std::optional<TrackInfo> MediaReader::current_track(bool read_progress) {
             g_variant_get(position, "(v)", &value);
             if (g_variant_is_of_type(value, G_VARIANT_TYPE_INT64)) {
                 const gint64 elapsed = g_variant_get_int64(value);
-                if (elapsed >= 0 && elapsed <= length) {
+                if (elapsed >= 0 && (length <= 0 || elapsed <= length)) {
                     info.position = std::chrono::seconds(elapsed / G_USEC_PER_SEC);
-                    info.duration = std::chrono::seconds(length / G_USEC_PER_SEC);
+                    info.position_ms = std::chrono::milliseconds(elapsed / 1000);
                 }
             }
             g_variant_unref(value);

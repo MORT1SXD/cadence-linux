@@ -29,6 +29,7 @@ set(CADENCE_SOURCES
     src/system_source.cpp
     src/weather_source.cpp
     src/vrchat_status.cpp
+    src/lyrics_source.cpp
     src/clock_source.cpp
     src/app_window.cpp
     src/osc_sender.cpp

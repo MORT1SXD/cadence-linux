@@ -30,7 +30,8 @@ updates, see the [install script](docs/install.md).
 give each one its own line, or put everything on one line. Pause automatic
 updates while you edit, then **Send Once** to try the preview in-game.
 
-Music comes from MPRIS and heart rate from Pulsoid. Clock, session timer,
+Music comes from MPRIS, with optional synced lyrics. Heart rate comes from
+Pulsoid. Clock, session timer,
 battery, CPU/RAM, and custom text all work offline. Weather is optional and uses
 a city you choose, never location detection. Discord sharing is off by default.
 VRChat Status can show mic mute, gestures, and movement using local OSC.

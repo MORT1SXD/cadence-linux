@@ -110,6 +110,7 @@ std::string lookup(const std::string& key, const TemplateData& d, const AppSetti
     if (key == "weather_icon") return d.weather && st.weather_show_icon ? d.weather->icon : "";
     if (key == "weather_condition") return d.weather && st.weather_show_condition ? d.weather->condition : "";
     if (key == "vrchat_status") return st.show_vrchat_component && d.vrchat ? vrchat_line(*d.vrchat, st) : "";
+    if (key == "lyric" && st.show_lyrics_component) return format_lyric(d.lyric, st);
 
     if (key == "clock")      return d.clock ? d.clock->time : "";
     if (key == "clock_date") return d.clock ? d.clock->date : "";
@@ -386,6 +387,7 @@ static std::string block_for(int component, const AppSettings& st) {
             ? "{if:weather_temperature}{if:weather_icon}{weather_icon} {end}{weather_temperature}"
               "{if:weather_condition} · {weather_condition}{end}{end}" : "";
         case COMP_VRCHAT: return st.show_vrchat_component ? "{vrchat_status}" : "";
+        case COMP_LYRICS: return st.show_lyrics_component ? "{lyric}" : "";
         default:           return {};
     }
 }
@@ -411,15 +413,39 @@ std::string render_chatbox(const TemplateData& data, const AppSettings& st) {
     };
     std::string separator = st.compact_layout ? st.compact_separator : "\n";
     if (st.compact_layout) flatten(separator);
-    std::string out;
+    std::vector<std::string> blocks;
+    std::optional<size_t> lyric_index;
     for (const int component : st.component_order) {
         std::string line = render_component(component, data, st);
         if (line.empty()) continue;
         if (st.compact_layout) flatten(line);
-        if (!out.empty()) out += separator;
-        out += line;
+        if (component == COMP_LYRICS) lyric_index = blocks.size();
+        blocks.push_back(std::move(line));
     }
-    if (st.box_drawing && !out.empty()) out = box_block(out);
+    auto combine = [&] {
+        std::string text;
+        for (const auto& block : blocks) {
+            if (block.empty()) continue;
+            if (!text.empty()) text += separator;
+            text += block;
+        }
+        return st.box_drawing && !text.empty() ? box_block(text) : text;
+    };
+    auto out = combine();
+    if (lyric_index && stats_for(out).over_limit) {
+        auto& block = blocks[*lyric_index];
+        const std::string original = std::move(block);
+        // A long lyric must not block the rest of the chatbox from sending.
+        block.clear();
+        const auto without_lyrics = combine();
+        const int remaining = 144 - stats_for(without_lyrics).chars;
+        for (int width = std::min(remaining, display_width(original) - 1); width >= 4; --width) {
+            block = truncate(original, width);
+            out = combine();
+            if (!stats_for(out).over_limit) return out;
+        }
+        return without_lyrics;
+    }
     return out;
 }
 
@@ -430,6 +456,27 @@ std::string render_component(int component, const TemplateData& data, const AppS
     std::string out;
     expand(block, i, data, st, true, out);
     return normalize(out);
+}
+
+std::string format_lyric(std::string_view lyric, const AppSettings& st) {
+    if (lyric.empty()) return {};
+    std::string prefix;
+    if (st.lyrics_show_icon) {
+        for (const char* p = st.lyrics_icon.c_str(); *p;) {
+            const auto ch = g_utf8_get_char_validated(p, -1);
+            if (ch == static_cast<gunichar>(-1) || ch == static_cast<gunichar>(-2)) break;
+            const auto* next = g_utf8_next_char(p);
+            if (!g_unichar_iscntrl(ch) && ch != 0x2028 && ch != 0x2029) prefix.append(p, next - p);
+            p = next;
+        }
+        const auto first = prefix.find_first_not_of(' ');
+        if (first != std::string::npos)
+            prefix = truncate(prefix.substr(first, prefix.find_last_not_of(' ') - first + 1), 12) + " ";
+        else
+            prefix.clear();
+    }
+    prefix.append(lyric);
+    return truncate(prefix, st.lyrics_max_width);
 }
 
 const std::vector<TokenInfo>& token_catalog() {
@@ -448,6 +495,7 @@ const std::vector<TokenInfo>& token_catalog() {
         {"{weather_icon}",        "Weather icon", "icon for the current condition"},
         {"{weather_condition}",   "Conditions", "weather description for the selected city"},
         {"{vrchat_status}",        "VRChat status", "selected read-only status fields"},
+        {"{lyric}",                "Lyric", "current synced lyric line"},
         {"{heart_icon}",       "♥ icon",   "the heart icon you set"},
         {"{song_icon}",        "♪ icon",   "the note icon you set"},
         {"{clock}",            "Time",     "local time, e.g. 21:07"},

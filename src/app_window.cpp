@@ -207,7 +207,9 @@ AppWindow::AppWindow(AdwApplication* app)
     window_ = adw_application_window_new(GTK_APPLICATION(app));
     g_object_add_weak_pointer(G_OBJECT(window_), reinterpret_cast<gpointer*>(&window_));
     g_signal_connect(window_, "close-request", G_CALLBACK(+[](GtkWindow*, gpointer data) -> gboolean {
-        static_cast<AppWindow*>(data)->vrchat_listener_.stop();
+        auto& self = *static_cast<AppWindow*>(data);
+        self.vrchat_listener_.stop();
+        if (self.lyrics_job_) g_cancellable_cancel(self.lyrics_job_);
         return FALSE;
     }), this);
     gtk_window_set_title(GTK_WINDOW(window_), "cadence");
@@ -426,12 +428,13 @@ GtkWidget* AppWindow::build_chatbox_page() {
 
 void AppWindow::create_source_row(int component) {
     static const char* titles[COMP_COUNT] = {
-        "Heart Rate", "Music", "Clock", "Custom Text", "Battery", "System Stats", "Session Timer", "Weather", "VRChat Status"
+        "Heart Rate", "Music", "Clock", "Custom Text", "Battery", "System Stats", "Session Timer", "Weather", "VRChat Status",
+        "Lyrics"
     };
     static const char* icons[COMP_COUNT] = {
         "emblem-favorite-symbolic", "audio-x-generic-symbolic", "preferences-system-time-symbolic",
         "accessories-text-editor-symbolic", "battery-symbolic", "utilities-system-monitor-symbolic",
-        "alarm-symbolic", "weather-clear-symbolic", "input-gaming-symbolic",
+        "alarm-symbolic", "weather-clear-symbolic", "input-gaming-symbolic", "media-view-subtitles-symbolic",
     };
     static constexpr bool AppSettings::*enabled[COMP_COUNT] = {
         &AppSettings::show_heart_component, &AppSettings::show_song_component,
@@ -440,6 +443,7 @@ void AppWindow::create_source_row(int component) {
         &AppSettings::show_timer_component,
         &AppSettings::show_weather_component,
         &AppSettings::show_vrchat_component,
+        &AppSettings::show_lyrics_component,
     };
     auto& source = sources_[component];
     source.enabled = enabled[component];
@@ -608,10 +612,142 @@ void AppWindow::create_source_row(int component) {
                 }));
             entry("Field Separator", &AppSettings::vrchat_separator);
             break;
+        case COMP_LYRICS:
+            add_lyrics_settings(row);
+            break;
         default:
             break;
     }
     gtk_list_box_append(GTK_LIST_BOX(component_list_), source.row);
+}
+
+void AppWindow::add_lyrics_settings(AdwExpanderRow* row) {
+    lyrics_preview_row_ = adw_action_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(lyrics_preview_row_), "Lyric Preview");
+    adw_preferences_row_set_use_markup(ADW_PREFERENCES_ROW(lyrics_preview_row_), FALSE);
+    adw_action_row_set_subtitle_lines(ADW_ACTION_ROW(lyrics_preview_row_), 2);
+    adw_expander_row_add_row(row, lyrics_preview_row_);
+
+    adw_expander_row_add_row(row, state_row("Look Up Lyrics Online",
+        "Send title, artist, album and duration to LRCLIB, even for preview only",
+        settings_.lyrics_online, [this](bool enabled) {
+            settings_.lyrics_online = enabled;
+            settings_.save();
+            reset_lyrics();
+        }));
+    GtkWidget* icon = entry_row("Lyric Icon", settings_.lyrics_icon);
+    gtk_widget_set_sensitive(icon, settings_.lyrics_show_icon);
+    on_text(icon, [this](const std::string& value) {
+        settings_.lyrics_icon = value;
+        settings_.save();
+        refresh_preview();
+    });
+    adw_expander_row_add_row(row, state_row("Show Lyric Icon", nullptr, settings_.lyrics_show_icon,
+        [this, icon](bool enabled) {
+            settings_.lyrics_show_icon = enabled;
+            gtk_widget_set_sensitive(icon, enabled);
+            settings_.save();
+            refresh_preview();
+        }));
+    adw_expander_row_add_row(row, icon);
+    adw_expander_row_add_row(row, spin_row("Timing Offset (ms)", "A positive offset shows lines earlier",
+        -5000, 5000, 250, settings_.lyrics_offset_ms, [this](int value) {
+            settings_.lyrics_offset_ms = value;
+            settings_.save();
+            refresh_preview();
+        }));
+    adw_expander_row_add_row(row, spin_row("Maximum Line Width", "The line may shrink further to fit the chatbox",
+        20, 120, 5, settings_.lyrics_max_width, [this](int value) {
+            settings_.lyrics_max_width = value;
+            settings_.save();
+            refresh_preview();
+        }));
+
+    auto* provider = adw_action_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(provider), "Lyrics Source");
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(provider), "Synced lyrics only");
+    auto* link = gtk_link_button_new_with_label("https://lrclib.net/", "LRCLIB");
+    gtk_widget_set_valign(link, GTK_ALIGN_CENTER);
+    adw_action_row_add_suffix(ADW_ACTION_ROW(provider), link);
+    auto* reload = gtk_button_new_with_label("Reload");
+    gtk_widget_set_valign(reload, GTK_ALIGN_CENTER);
+    adw_action_row_add_suffix(ADW_ACTION_ROW(provider), reload);
+    on_click(reload, [this] { reset_lyrics(); });
+    adw_expander_row_add_row(row, provider);
+}
+
+void AppWindow::reset_lyrics() {
+    if (lyrics_job_) g_cancellable_cancel(lyrics_job_);
+    lyrics_cache_.clear();
+    lyrics_query_.reset();
+    lyrics_result_ = {};
+    lyrics_attempted_ = false;
+    lyrics_retry_at_ = 0;
+    refresh_preview();
+}
+
+void AppWindow::refresh_lyrics(gint64 now) {
+    std::optional<LyricsQuery> next;
+    if (settings_.lyrics_online &&
+        last_track_ && !last_track_->artist.empty() && last_track_->artist.size() <= 512 &&
+        last_track_->title.size() <= 512 && last_track_->album.size() <= 512) {
+        const auto duration = last_track_->duration ? last_track_->duration->count() : 0;
+        next = LyricsQuery{last_track_->title, last_track_->artist, last_track_->album,
+            duration >= 1 && duration <= 3600 ? static_cast<int>(duration) : 0};
+    }
+    if (next != lyrics_query_) {
+        if (lyrics_job_) g_cancellable_cancel(lyrics_job_);
+        lyrics_query_ = std::move(next);
+        lyrics_result_ = {};
+        lyrics_attempted_ = false;
+        lyrics_retry_at_ = 0;
+    }
+    if (!lyrics_query_ || !last_track_->playing || !last_track_->position_ms || lyrics_job_) return;
+    if (lyrics_retry_at_ && now >= lyrics_retry_at_) {
+        lyrics_attempted_ = false;
+        lyrics_retry_at_ = 0;
+    }
+    if (lyrics_attempted_) return;
+
+    const auto query = *lyrics_query_;
+    for (const auto& cached : lyrics_cache_) {
+        if (cached.query == query && cached.expires > now) {
+            lyrics_result_ = cached.result;
+            lyrics_attempted_ = true;
+            return;
+        }
+    }
+    lyrics_attempted_ = true;
+    if (now < lyrics_online_after_) {
+        lyrics_result_.status = "Waiting before the next LRCLIB lookup";
+        lyrics_retry_at_ = lyrics_online_after_;
+        return;
+    }
+    lyrics_online_after_ = now + 2 * G_USEC_PER_SEC;
+    lyrics_job_ = g_cancellable_new();
+    lookup_synced_lyrics(query, lyrics_job_, [this, query](LyricsResult result) {
+        const bool cancelled = g_cancellable_is_cancelled(lyrics_job_);
+        g_clear_object(&lyrics_job_);
+        if (!window_) return;
+        const auto now = g_get_monotonic_time();
+        if (result.retry_after_seconds > 0) {
+            const auto delay = std::min<gint64>(result.retry_after_seconds,
+                (G_MAXINT64 - now) / G_USEC_PER_SEC - 10);
+            lyrics_online_after_ = now + (delay + g_random_int_range(0, 6)) * G_USEC_PER_SEC;
+        }
+        if (!cancelled && lyrics_query_ && *lyrics_query_ == query) {
+            if (result.retry_after_seconds > 0) {
+                lyrics_retry_at_ = lyrics_online_after_;
+            }
+            if (result.cacheable) {
+                if (lyrics_cache_.size() >= 16) lyrics_cache_.pop_front();
+                const auto ttl = result.lines.empty() ? 600LL : 3600LL;
+                lyrics_cache_.push_back({query, result, now + ttl * G_USEC_PER_SEC});
+            }
+            lyrics_result_ = std::move(result);
+        }
+        refresh_preview();
+    });
 }
 
 void AppWindow::add_weather_settings(AdwExpanderRow* row) {
@@ -1261,8 +1397,24 @@ void AppWindow::send_message(const std::string& text, bool manual) {
 
 void AppWindow::refresh_preview(bool send) {
     const bool raw = settings_.use_raw_template && !settings_.raw_template.empty();
-    last_track_ = media_.current_track(settings_.show_music_progress ||
+    last_track_ = media_.current_track(settings_.show_music_progress || settings_.lyrics_online ||
                                         (raw && settings_.raw_template.find("music_progress") != std::string::npos));
+    refresh_lyrics(g_get_monotonic_time());
+    std::string lyric;
+    std::string lyric_preview;
+    if (!settings_.lyrics_online) lyric_preview = "Enable online lookup to preview lyrics";
+    else if (!last_track_ || !last_track_->playing) lyric_preview = "Waiting for music to play";
+    else if (!last_track_->position_ms) lyric_preview = "Your player doesn’t report playback position";
+    else if (!lyrics_query_) lyric_preview = "No usable track title or artist";
+    else {
+        lyric = lyric_at(lyrics_result_.lines, last_track_->position_ms->count() + settings_.lyrics_offset_ms);
+        if (!lyric.empty()) {
+            lyric_preview = format_lyric(lyric, settings_);
+        } else if (lyrics_job_) lyric_preview = "Looking for synced lyrics…";
+        else if (!lyrics_result_.lines.empty()) lyric_preview = "No lyric at this moment";
+        else lyric_preview = lyrics_result_.status.empty() ? "No synced lyrics available" : lyrics_result_.status;
+    }
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(lyrics_preview_row_), lyric_preview.c_str());
 
     last_hr_ = HeartStats{};
     const long long count = count_bpm_;
@@ -1321,7 +1473,7 @@ void AppWindow::refresh_preview(bool send) {
         settings_.show_vrchat_component && !same_port && !vrchat_listener_.listening());
     const TemplateData data{&last_hr_, last_track_ ? &*last_track_ : nullptr,
                             &last_clock_, &last_battery_, &last_system_, timer,
-                            weather ? &*weather : nullptr, &vrchat};
+                            weather ? &*weather : nullptr, &vrchat, std::move(lyric)};
 
     preview_text_ = render_chatbox(data, settings_);
     const auto& text = preview_text_;
@@ -1358,6 +1510,7 @@ void AppWindow::refresh_preview(bool send) {
                 case COMP_VRCHAT:
                     summary = has_vrchat_state ? "No selected fields to show" : vrchat_status;
                     break;
+                case COMP_LYRICS: summary = lyric_preview; break;
                 default: break;
             }
         }

@@ -11,6 +11,9 @@ struct TrackInfo {
     std::string artist;
     std::optional<std::chrono::seconds> position;
     std::optional<std::chrono::seconds> duration;
+    std::optional<std::chrono::milliseconds> position_ms;
+    std::string album;
+    bool playing = false;
 };
 
 // polls mpris (media player remote interfacing spec) over dbus for the active player

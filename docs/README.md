@@ -15,6 +15,7 @@ Pausing VRChat output does not turn off Discord sharing.
 | --- | --- |
 | Clock | Local time, with 12- or 24-hour format and optional date and seconds. |
 | Music | Uses MPRIS, supported by many Linux players and browsers. Progress appears only when the player reports position and duration. |
+| Lyrics | Opt in to LRCLIB lookup and preview one synced line at a time before sharing. |
 | Heart Rate | Connect a Pulsoid access token with the `data:heart_rate:read` scope on the Connectivity tab. Heart Rate settings are on Chatbox. |
 | Custom Text | Add a static line of your own. |
 | Battery | Shows system battery level and, optionally, charging status. Omitted when no battery is detected. |
@@ -28,6 +29,18 @@ you entered to [Open-Meteo](https://open-meteo.com/), which provides the weather
 data. Selecting a city saves that preset locally. Forecasts use its
 coordinates and refresh approximately every 15 minutes while Weather is
 enabled. The city name isn’t sent to VRChat.
+
+### Lyrics
+
+Expand **Lyrics** below Music and turn on **Look Up Lyrics Online**. Lookup
+sends the track’s title, artist, album (if available), and duration to
+[LRCLIB](https://lrclib.net/), including while previewing. No audio is sent.
+
+Check **Lyric Preview** before turning on **Include in Chatbox**. Lyrics use
+your player’s MPRIS position; they stay out if playback is paused, position is
+unavailable, or no synced match is found. You can adjust the timing offset
+and change or hide the lyric icon (the default is `❝`). Long lines are
+shortened or omitted if they would crowd out the rest of your chatbox.
 
 ### VRChat Status
 
