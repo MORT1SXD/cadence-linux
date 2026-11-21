@@ -955,7 +955,8 @@ void AppWindow::on_pulsoid_status(const std::string& status) {
     gtk_widget_remove_css_class(pulsoid_pill_, "is-ok");
     gtk_widget_remove_css_class(pulsoid_pill_, "is-error");
     if (status == "connected") gtk_widget_add_css_class(pulsoid_pill_, "is-ok");
-    if (status == "connection error") gtk_widget_add_css_class(pulsoid_pill_, "is-error");
+    if (status != "connected" && status != "connecting" && status != "disconnected")
+        gtk_widget_add_css_class(pulsoid_pill_, "is-error");
 }
 
 SessionTimer::Seconds AppWindow::timer_limit() const {
