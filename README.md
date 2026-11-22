@@ -11,6 +11,8 @@ Linux desktop app that sends text through VRChat’s built-in OSC input.
 
 ## Get started
 
+### AppImage
+
 1. Download `cadence-x86_64.AppImage` from [Releases](https://github.com/MORT1SXD/cadence-linux/releases/latest).
 2. Make it executable and open it:
    ```sh
@@ -21,6 +23,19 @@ Linux desktop app that sends text through VRChat’s built-in OSC input.
 The AppImage includes GTK, libadwaita, and libwebsockets. If FUSE isn’t available,
 run it with `--appimage-extract-and-run`. The [install script](docs/install.md)
 can download or update the AppImage without creating shortcuts.
+
+### Flatpak
+
+1. Download `cadence-1.7.1-x86_64.flatpak` from the [v1.7.1 release](https://github.com/MORT1SXD/cadence-linux/releases/tag/v1.7.1).
+2. From your downloads folder, install the bundle:
+   ```sh
+   flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+   flatpak install --user ./cadence-1.7.1-x86_64.flatpak
+   ```
+3. Open **Cadence** from your app menu, or run `flatpak run io.github.mort1sxd.cadence-linux`.
+
+Flathub provides the GNOME runtime only. Cadence is installed from the GitHub
+bundle. To update, download and install a newer bundle.
 
 ## Set up VRChat
 
