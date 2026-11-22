@@ -34,10 +34,20 @@ The [AppImage workflow](../.github/workflows/appimage.yml) builds on Ubuntu
 24.04 x86-64, tests startup and a local OSC message, and saves the AppImage
 and `SHA256SUMS` as its run artifact.
 
-To build it locally on that same baseline, install the build dependencies
-listed in the workflow, then run `bash packaging/build-appimage.sh`. The
-outputs are in `build/dist/`. The packaging script verifies the downloaded
-packaging tools against pinned checksums.
+To build it locally on that same baseline, enable Ubuntu source repositories,
+install the build dependencies listed in the workflow, then run
+`bash packaging/build-appimage.sh`. The script rebuilds Ubuntu's GTK with a
+Wayland window-icon backport so the portable app can supply its taskbar icon
+without a launcher. The outputs are in `build/dist/`. The packaging script
+verifies the downloaded packaging tools against pinned checksums.
+
+On a compositor that supports `xdg-toplevel-icon`, verify the AppImage sends
+its window icon directly:
+
+```sh
+dbus-run-session -- python3 packaging/smoke-appimage.py \
+  build/dist/cadence-x86_64.AppImage --check-wayland-icon
+```
 
 After downloading a release, run `sha256sum -c SHA256SUMS` beside the
 AppImage to verify it. See [bundled software](../packaging/THIRD-PARTY.md)

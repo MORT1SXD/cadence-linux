@@ -15,12 +15,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build dependencies
         run: |
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake g++ git pkg-config libgtk-4-dev libadwaita-1-dev libwebsockets-dev \
             libcurl4-openssl-dev libjson-glib-dev \
             libgdk-pixbuf-2.0-dev librsvg2-common gsettings-desktop-schemas adwaita-icon-theme \
-            desktop-file-utils file patchelf squashfs-tools xvfb xauth dbus-daemon
+            desktop-file-utils file patchelf squashfs-tools xvfb xauth dbus-daemon \
+            meson ninja-build gettext dpkg-dev patch sassc wayland-protocols libwayland-dev libvulkan-dev glslc \
+            libepoxy-dev libdrm-dev libxdamage-dev libxinerama-dev libxi-dev libxrandr-dev \
+            libxcursor-dev libxkbcommon-dev
       - name: Build and package
         run: bash packaging/build-appimage.sh "$RUNNER_TEMP/appimage" dist
       - name: Launch the packaged app and check OSC

@@ -3,15 +3,14 @@
 set -euo pipefail
 
 usage() {
-    printf '%s\n' 'Usage: bash install.sh [--version vX.Y.Z] [--extract | --replace PATH]' \
-        'Installs the latest release by default. Run again to update.' \
-        'Use --extract if your desktop does not have FUSE.' \
+    printf '%s\n' 'Usage: bash install.sh [--version vX.Y.Z] [--replace PATH]' \
+        'Downloads the latest release without creating shortcuts. Run again to update.' \
+        'Launch with --appimage-extract-and-run if your desktop does not have FUSE.' \
         'Use --replace to update an existing AppImage in place.'
 }
 fail() { printf 'Cadence: %s\n' "$*" >&2; exit 1; }
 
 version=latest
-extract=false
 replace=
 while (($#)); do
     case $1 in
@@ -20,7 +19,6 @@ while (($#)); do
             (($# >= 2)) || fail 'Missing version after --version.'
             version=$2
             shift ;;
-        --extract) extract=true ;;
         --replace)
             (($# >= 2)) && [[ -n $2 ]] || fail 'Missing AppImage path after --replace.'
             replace=$2
@@ -39,7 +37,6 @@ command -v curl >/dev/null && command -v sha256sum >/dev/null ||
 
 asset=cadence-x86_64.AppImage
 if [[ -n $replace ]]; then
-    "$extract" && fail '--extract applies only to new desktop installations.'
     appimage=$(realpath -e -- "$replace") || fail 'Could not find that AppImage.'
     install_dir=${appimage%/*}
     install_dir=${install_dir:-/}
@@ -55,9 +52,6 @@ else
     [[ $data = /* ]] || fail 'XDG_DATA_HOME must be an absolute path.'
     install_dir="$data/cadence/appimage"
     appimage="$install_dir/$asset"
-    desktop_dir="$data/applications"
-    launcher="$desktop_dir/dev.cadence.app.AppImage.desktop"
-    command_path="$HOME/.local/bin/cadence"
 fi
 case $appimage in
     *$'\n'*|*$'\r'*|*$'\t'*) fail 'The install path cannot contain tabs or line breaks.' ;;
@@ -105,53 +99,5 @@ fi
 
 chmod 0755 "$stage/$asset"
 mv -T -- "$stage/$asset" "$appimage"
-
-mkdir -p -- "$HOME/.local/bin" "$desktop_dir"
-if [[ ! -e $command_path && ! -L $command_path ]]; then
-    ln -s -- "$appimage" "$command_path"
-elif [[ ! -L $command_path || $(readlink "$command_path") != "$appimage" ]]; then
-    printf 'Kept your existing %s unchanged.\n' "$command_path"
-fi
-
-marker='# Managed by the Cadence AppImage installer'
-if [[ -L $launcher || ( -e $launcher && ! -f $launcher ) ]] ||
-   [[ -f $launcher && $(head -n 1 -- "$launcher") != "$marker" ]]; then
-    printf 'Kept your existing desktop launcher unchanged.\n'
-else
-    # Escape once for Exec argument quoting, then for the desktop-file string.
-    exec_path=${appimage//\\/\\\\}
-    exec_path=${exec_path//\"/\\\"}
-    exec_path=${exec_path//\$/\\\$}
-    exec_path=${exec_path//\`/\\\`}
-    exec_path=${exec_path//\\/\\\\}
-    exec_path=${exec_path//%/%%}
-    extra=
-    if "$extract"; then extra=' --appimage-extract-and-run'; fi
-    # Keep extraction mode when updating a launcher previously installed with it.
-    if [[ -z $extra && -f $launcher ]] && grep -q '^X-Cadence-Extract=true$' "$launcher"; then
-        extract=true
-        extra=' --appimage-extract-and-run'
-    fi
-    icon=applications-utilities
-    if (cd "$stage" && "$appimage" --appimage-extract dev.cadence.app.png >/dev/null 2>&1) &&
-       [[ -f "$stage/squashfs-root/dev.cadence.app.png" && ! -L "$stage/squashfs-root/dev.cadence.app.png" ]]; then
-        install -m 0644 -- "$stage/squashfs-root/dev.cadence.app.png" "$stage/dev.cadence.app.png"
-        mv -T -- "$stage/dev.cadence.app.png" "$install_dir/dev.cadence.app.png"
-        icon=${install_dir//\\/\\\\}/dev.cadence.app.png
-    fi
-    cat > "$stage/cadence.desktop" <<EOF
-$marker
-[Desktop Entry]
-Type=Application
-Name=Cadence
-Comment=Send a custom chatbox to VRChat over OSC
-Exec="$exec_path"$extra
-Icon=$icon
-Categories=Utility;
-Terminal=false
-X-Cadence-Extract=$extract
-EOF
-    mv -T -- "$stage/cadence.desktop" "$launcher"
-fi
 
 printf 'Installed: %s\nQuit the old Cadence window before opening the updated app.\n' "$appimage"

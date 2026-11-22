@@ -19,8 +19,8 @@ Linux desktop app that sends text through VRChat’s built-in OSC input.
    ```
 
 The AppImage includes GTK, libadwaita, and libwebsockets. If FUSE isn’t available,
-run it with `--appimage-extract-and-run`. For a desktop launcher and easy
-updates, see the [install script](docs/install.md).
+run it with `--appimage-extract-and-run`. The [install script](docs/install.md)
+can download or update the AppImage without creating shortcuts.
 
 ## Set up VRChat
 

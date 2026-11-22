@@ -1,0 +1,219 @@
+diff --git a/gdk/wayland/gdkdisplay-wayland.c b/gdk/wayland/gdkdisplay-wayland.c
+index bbe2e41..6bdbaa3 100644
+--- a/gdk/wayland/gdkdisplay-wayland.c
++++ b/gdk/wayland/gdkdisplay-wayland.c
+@@ -426,6 +426,24 @@ static void gdk_wayland_display_remove_output     (GdkWaylandDisplay *display_wa
+ static void gdk_wayland_display_init_xdg_output   (GdkWaylandDisplay *display_wayland);
+ static void gdk_wayland_display_get_xdg_output    (GdkWaylandMonitor *monitor);
+
++static void
++toplevel_icon_size (void                                *data,
++                    struct xdg_toplevel_icon_manager_v1 *manager,
++                    int32_t                              size)
++{
++}
++
++static void
++toplevel_icon_done (void                                *data,
++                    struct xdg_toplevel_icon_manager_v1 *manager)
++{
++}
++
++static const struct xdg_toplevel_icon_manager_v1_listener toplevel_icon_listener = {
++  toplevel_icon_size,
++  toplevel_icon_done,
++};
++
+ static void
+ gdk_registry_handle_global (void               *data,
+                             struct wl_registry *registry,
+@@ -476,6 +494,13 @@ gdk_registry_handle_global (void               *data,
+                           &xdg_wm_dialog_v1_interface,
+                           MIN (version, XDG_WM_DIALOG_VERSION));
+     }
++  else if (strcmp (interface, xdg_toplevel_icon_manager_v1_interface.name) == 0)
++    {
++      display_wayland->toplevel_icon_manager =
++        wl_registry_bind (registry, id, &xdg_toplevel_icon_manager_v1_interface, 1);
++      xdg_toplevel_icon_manager_v1_add_listener (display_wayland->toplevel_icon_manager,
++                                                 &toplevel_icon_listener, NULL);
++    }
+   else if (strcmp (interface, "gtk_shell1") == 0)
+     {
+       display_wayland->gtk_shell =
+@@ -834,6 +859,7 @@ gdk_wayland_display_dispose (GObject *object)
+   if (display_wayland->linux_dmabuf_formats)
+     munmap (display_wayland->linux_dmabuf_formats, display_wayland->linux_dmabuf_n_formats * 16);
+
++  g_clear_pointer (&display_wayland->toplevel_icon_manager, xdg_toplevel_icon_manager_v1_destroy);
+   g_clear_pointer (&display_wayland->shm, wl_shm_destroy);
+   g_clear_pointer (&display_wayland->wl_registry, wl_registry_destroy);
+
+diff --git a/gdk/wayland/gdkdisplay-wayland.h b/gdk/wayland/gdkdisplay-wayland.h
+index 352b2f7..118d9da 100644
+--- a/gdk/wayland/gdkdisplay-wayland.h
++++ b/gdk/wayland/gdkdisplay-wayland.h
+@@ -41,6 +41,7 @@
+ #include <gdk/wayland/viewporter-client-protocol.h>
+ #include <gdk/wayland/presentation-time-client-protocol.h>
+ #include <gdk/wayland/xdg-dialog-v1-client-protocol.h>
++#include <gdk/wayland/xdg-toplevel-icon-v1-client-protocol.h>
+
+ #include <glib.h>
+ #include <gdk/gdkkeys.h>
+@@ -111,6 +112,7 @@ struct _GdkWaylandDisplay
+   struct xdg_wm_base *xdg_wm_base;
+   struct zxdg_shell_v6 *zxdg_shell_v6;
+   struct xdg_wm_dialog_v1 *xdg_wm_dialog;
++  struct xdg_toplevel_icon_manager_v1 *toplevel_icon_manager;
+   struct gtk_shell1 *gtk_shell;
+   struct wl_data_device_manager *data_device_manager;
+   struct wl_subcompositor *subcompositor;
+@@ -171,4 +173,3 @@ void gdk_wayland_display_dispatch_queue (GdkDisplay            *display,
+                                          struct wl_event_queue *event_queue);
+
+ G_END_DECLS
+-
+diff --git a/gdk/wayland/gdktoplevel-wayland.c b/gdk/wayland/gdktoplevel-wayland.c
+index 9105c2f..87c4bbe 100644
+--- a/gdk/wayland/gdktoplevel-wayland.c
++++ b/gdk/wayland/gdktoplevel-wayland.c
+@@ -149,6 +149,8 @@ struct _GdkWaylandToplevel
+   struct zxdg_imported_v1 *imported_transient_for;
+   struct zxdg_imported_v2 *imported_transient_for_v2;
+   GHashTable *shortcuts_inhibitors;
++  struct xdg_toplevel_icon_v1 *icon;
++  GList *icon_surfaces;
+ };
+
+ typedef struct
+@@ -208,6 +210,7 @@ gdk_wayland_toplevel_clear_saved_size (GdkWaylandToplevel *toplevel)
+ static void maybe_set_gtk_surface_dbus_properties (GdkWaylandToplevel *wayland_toplevel);
+ static void maybe_set_gtk_surface_modal (GdkWaylandToplevel *wayland_toplevel);
+ static gboolean maybe_set_xdg_dialog_modal (GdkWaylandToplevel *wayland_toplevel);
++static gboolean sync_toplevel_icon (GdkWaylandToplevel *toplevel);
+
+ static void
+ gdk_wayland_toplevel_hide_surface (GdkWaylandSurface *wayland_surface)
+@@ -884,6 +887,9 @@ gdk_wayland_surface_create_xdg_toplevel (GdkWaylandToplevel *wayland_toplevel)
+   if (!maybe_set_xdg_dialog_modal (wayland_toplevel))
+     maybe_set_gtk_surface_modal (wayland_toplevel);
+
++  if (wayland_toplevel->icon)
++    sync_toplevel_icon (wayland_toplevel);
++
+   gdk_profiler_add_mark (GDK_PROFILER_CURRENT_TIME, 0, "Wayland surface commit", NULL);
+   wl_surface_commit (wayland_surface->display_server.wl_surface);
+ }
+@@ -1254,6 +1260,79 @@ gdk_wayland_toplevel_set_transient_for (GdkWaylandToplevel *toplevel,
+   gdk_wayland_toplevel_sync_parent (toplevel);
+ }
+
++static gboolean
++sync_toplevel_icon (GdkWaylandToplevel *toplevel)
++{
++  GdkWaylandDisplay *display = GDK_WAYLAND_DISPLAY (gdk_surface_get_display (GDK_SURFACE (toplevel)));
++
++  if (!display->toplevel_icon_manager || !toplevel->display_server.xdg_toplevel)
++    return FALSE;
++
++  xdg_toplevel_icon_manager_v1_set_icon (display->toplevel_icon_manager,
++                                        toplevel->display_server.xdg_toplevel,
++                                        toplevel->icon);
++  return TRUE;
++}
++
++static void
++clear_toplevel_icon (GdkWaylandToplevel *toplevel)
++{
++  /* Destroy the icon before its backing buffers, as required by the protocol. */
++  g_clear_pointer (&toplevel->icon, xdg_toplevel_icon_v1_destroy);
++  g_list_free_full (toplevel->icon_surfaces, (GDestroyNotify) cairo_surface_destroy);
++  toplevel->icon_surfaces = NULL;
++}
++
++static void
++ignore_icon_buffer_release (void *data, struct wl_buffer *buffer)
++{
++}
++
++static const struct wl_buffer_listener icon_buffer_listener = {
++  ignore_icon_buffer_release,
++};
++
++static void
++set_toplevel_icon_list (GdkWaylandToplevel *toplevel,
++                        GList              *textures)
++{
++  GdkWaylandDisplay *display = GDK_WAYLAND_DISPLAY (gdk_surface_get_display (GDK_SURFACE (toplevel)));
++  gboolean had_icon = toplevel->icon != NULL;
++
++  if (!display->toplevel_icon_manager)
++    return;
++
++  clear_toplevel_icon (toplevel);
++
++  for (GList *l = textures; l; l = l->next)
++    {
++      GdkTexture *texture = l->data;
++      int size = gdk_texture_get_width (texture);
++      cairo_surface_t *surface;
++      struct wl_buffer *buffer;
++
++      /* xdg-toplevel-icon only accepts square buffers. */
++      if (size <= 0 || size != gdk_texture_get_height (texture))
++        continue;
++
++      surface = gdk_wayland_display_create_shm_surface (display, size, size,
++                                                       &GDK_FRACTIONAL_SCALE_INIT_INT (1));
++      gdk_texture_download (texture, cairo_image_surface_get_data (surface),
++                            cairo_image_surface_get_stride (surface));
++      cairo_surface_mark_dirty (surface);
++      buffer = _gdk_wayland_shm_surface_get_wl_buffer (surface);
++      wl_buffer_add_listener (buffer, &icon_buffer_listener, NULL);
++
++      if (!toplevel->icon)
++        toplevel->icon = xdg_toplevel_icon_manager_v1_create_icon (display->toplevel_icon_manager);
++      xdg_toplevel_icon_v1_add_buffer (toplevel->icon, buffer, 1);
++      toplevel->icon_surfaces = g_list_prepend (toplevel->icon_surfaces, surface);
++    }
++
++  if ((had_icon || toplevel->icon) && sync_toplevel_icon (toplevel))
++    wl_surface_commit (GDK_WAYLAND_SURFACE (toplevel)->display_server.wl_surface);
++}
++
+ #define LAST_PROP 1
+
+ static void
+@@ -1288,6 +1367,7 @@ gdk_wayland_toplevel_set_property (GObject      *object,
+       break;
+
+     case LAST_PROP + GDK_TOPLEVEL_PROP_ICON_LIST:
++      set_toplevel_icon_list (toplevel, g_value_get_pointer (value));
+       break;
+
+     case LAST_PROP + GDK_TOPLEVEL_PROP_DECORATED:
+@@ -1382,6 +1462,7 @@ gdk_wayland_toplevel_finalize (GObject *object)
+
+   g_free (self->title);
+   g_clear_pointer (&self->shortcuts_inhibitors, g_hash_table_unref);
++  clear_toplevel_icon (self);
+
+   G_OBJECT_CLASS (gdk_wayland_toplevel_parent_class)->finalize (object);
+ }
+diff --git a/gdk/wayland/meson.build b/gdk/wayland/meson.build
+index f0961e5..7907626 100644
+--- a/gdk/wayland/meson.build
++++ b/gdk/wayland/meson.build
+@@ -148,6 +148,11 @@ proto_sources = [
+     'version': 1,
+     'required': '<1.36',
+   },
++  {
++    'name': 'xdg-toplevel-icon',
++    'stability': 'private',
++    'version': 1,
++  },
+ ]
+
+ gdk_wayland_gen_headers = []
