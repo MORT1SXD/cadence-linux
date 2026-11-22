@@ -37,6 +37,7 @@ For help, see the [user guide](docs/README.md#troubleshooting).
 **Chatbox** has a live preview and expandable source settings. Reorder sources,
 give each one its own line, or put everything on one line. Pause automatic
 updates while you edit, then **Send Once** to try the preview in-game.
+Use **Status** to replace your chatbox with a saved phrase until you turn it off.
 
 Music comes from MPRIS, with optional synced lyrics. Heart rate comes from
 Pulsoid. Clock, session timer, battery, CPU/RAM, and custom text work offline.

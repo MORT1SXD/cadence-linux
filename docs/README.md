@@ -10,6 +10,21 @@ the displayed character or line limit are not sent.
 **Pause Sending** keeps the preview running without sending it to VRChat.
 **Send Once** sends the current preview while leaving automatic updates paused.
 
+## Status
+
+Choose **Add Status** to save a phrase such as “Be right back”. Use a
+phrase’s switch to replace the entire chatbox with that exact text, even if
+you use a saved template. Only one status can be active at a time; turning it
+off restores your usual message. The Chatbox preview also has a **Turn Off**
+button while a status is active.
+
+The row menu lets you edit, reorder, or delete phrases. Phrases are saved
+locally, but the active switch always starts off when you reopen Cadence.
+**Pause Sending** still pauses automatic sends; use **Send Once** if you want
+to send the active status without resuming automatic updates.
+
+## Sources
+
 | Source | Setup |
 | --- | --- |
 | Clock | Local time, with 12- or 24-hour format and optional date and seconds. |

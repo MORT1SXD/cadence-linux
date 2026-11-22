@@ -21,6 +21,7 @@ set(CADENCE_SOURCES
     src/lyrics_source.cpp
     src/clock_source.cpp
     src/app_window.cpp
+    src/status_page.cpp
     src/osc_sender.cpp
     src/pulsoid_client.cpp
     src/media_reader.cpp

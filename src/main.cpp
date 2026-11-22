@@ -40,6 +40,10 @@ const char* css_data = R"CSS(
     font-size: 1.02em;
 }
 
+/* Round the banner's painted surface to match the preview panel. */
+banner.status-override > revealer > widget {
+    border-radius: 8px;
+}
 
 /* pill buttons for connect/disconnect. kept small so they read as a pair of
    actions rather than the loudest thing in the row */

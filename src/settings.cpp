@@ -176,6 +176,16 @@ AppSettings AppSettings::load() {
         s.raw_template = get_string(kf, "format", "raw_template", "");
         s.use_raw_template = get_bool(kf, "format", "use_raw_template", s.use_raw_template);
         s.send_automatically = get_bool(kf, "output", "send_automatically", s.send_automatically);
+
+        gsize count = 0;
+        if (gchar** phrases = g_key_file_get_string_list(kf, "status", "phrases", &count, nullptr)) {
+            for (gsize i = 0; i < std::min(count, kMaxStatuses); ++i) {
+                const std::string phrase = phrases[i];
+                if (phrase.size() <= kMaxStatusBytes && g_utf8_validate(phrase.data(), phrase.size(), nullptr))
+                    s.status_phrases.push_back(phrase);
+            }
+            g_strfreev(phrases);
+        }
     }
     g_key_file_free(kf);
     return s;
@@ -273,6 +283,13 @@ void AppSettings::save() const {
         g_key_file_set_string(kf, "format", "raw_template", raw_template.c_str());
     g_key_file_set_boolean(kf, "format", "use_raw_template", use_raw_template);
     g_key_file_set_boolean(kf, "output", "send_automatically", send_automatically);
+
+    if (!status_phrases.empty()) {
+        std::vector<const char*> phrases;
+        phrases.reserve(status_phrases.size());
+        for (const auto& phrase : status_phrases) phrases.push_back(phrase.c_str());
+        g_key_file_set_string_list(kf, "status", "phrases", phrases.data(), phrases.size());
+    }
 
     g_key_file_save_to_file(kf, config_path().c_str(), nullptr);
     g_key_file_free(kf);

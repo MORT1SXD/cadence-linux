@@ -14,6 +14,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace cadence {
 
@@ -28,6 +29,13 @@ private:
     GtkWidget* pause_button_ = nullptr;
     GtkWidget* copy_button_ = nullptr;
     GtkWidget* send_once_button_ = nullptr;
+    AdwBanner* status_banner_ = nullptr;
+    AdwPreferencesGroup* status_group_ = nullptr;
+    GtkWidget* add_status_button_ = nullptr;
+    GtkWidget* empty_status_row_ = nullptr;
+    std::vector<GtkWidget*> status_rows_;
+    std::optional<size_t> active_status_; // Session-only; never restored from settings.
+    bool syncing_status_ = false;
     GtkWidget* timer_action_ = nullptr;
     GtkWidget* timer_status_ = nullptr;
     GtkWidget* weather_city_row_ = nullptr;
@@ -51,6 +59,8 @@ private:
     GtkWidget* disconnect_btn_ = nullptr;
     GtkWidget* toast_overlay_ = nullptr;
     bool update_running_ = false;
+    AdwToast* update_toast_ = nullptr;
+    guint update_toast_expiry_ = 0;
 
     GtkWidget* component_list_ = nullptr;
     struct SourceRow {
@@ -109,11 +119,19 @@ private:
 
     GtkWidget* build_preview_card();
     GtkWidget* build_chatbox_page();
+    GtkWidget* build_status_page();
+    void rebuild_status_rows();
+    void sync_status_controls();
+    void set_active_status(std::optional<size_t> index);
+    void edit_status(std::optional<size_t> index);
+    void move_status(size_t from, size_t to);
+    void confirm_delete_status(size_t index);
     void add_pulsoid_connection(AdwPreferencesPage* page);
     GtkWidget* build_connect_page();
     GtkWidget* build_settings_menu();
     void confirm_appimage_update(std::string path, std::string installer);
     void run_appimage_update(const std::string& path, const std::string& installer);
+    void show_update_toast(const char* title, guint timeout = 4);
 
     void create_source_row(int component);
     void add_weather_settings(AdwExpanderRow* row);

@@ -1,6 +1,7 @@
 #pragma once
 #include "weather_source.hpp"
 #include "vrchat_status.hpp"
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,10 @@ struct AppSettings {
 
     // output
     bool send_automatically = true;
+
+    static constexpr std::size_t kMaxStatuses = 50;
+    static constexpr std::size_t kMaxStatusBytes = 1024;
+    std::vector<std::string> status_phrases;
 
     // how often the chatbox is refreshed, in ms. vrchat rate-limits, and a
     // faster tick is not meaningfully fresher past about once a second.

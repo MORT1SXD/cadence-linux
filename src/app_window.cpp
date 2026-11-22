@@ -230,6 +230,7 @@ AppWindow::AppWindow(AdwApplication* app)
     // text-only titles on purpose: add_titled_with_icon prints the icon's *name*
     // when the theme lacks it, which produced unreadable tabs
     adw_view_stack_add_titled(ADW_VIEW_STACK(stack), build_chatbox_page(), "chatbox", "Chatbox");
+    adw_view_stack_add_titled(ADW_VIEW_STACK(stack), build_status_page(), "status", "Status");
     adw_view_stack_add_titled(ADW_VIEW_STACK(stack), build_connect_page(), "connect", "Connectivity");
     GtkWidget* switcher = adw_view_switcher_new();
     adw_view_switcher_set_stack(ADW_VIEW_SWITCHER(switcher), ADW_VIEW_STACK(stack));
@@ -302,6 +303,14 @@ GtkWidget* AppWindow::build_preview_card() {
     GtkWidget* card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_hexpand(card, TRUE);
     gtk_widget_add_css_class(card, "preview-card");
+
+    status_banner_ = ADW_BANNER(adw_banner_new("Status active — normal sources are hidden"));
+    gtk_widget_add_css_class(GTK_WIDGET(status_banner_), "status-override");
+    adw_banner_set_button_label(status_banner_, "Turn Off");
+    g_signal_connect(status_banner_, "button-clicked", G_CALLBACK(+[](AdwBanner*, gpointer self) {
+        static_cast<AppWindow*>(self)->set_active_status(std::nullopt);
+    }), this);
+    gtk_box_append(GTK_BOX(card), GTK_WIDGET(status_banner_));
 
     GtkWidget* head = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     auto make_pill = [](const char* text) {
@@ -980,21 +989,49 @@ GtkWidget* AppWindow::build_settings_menu() {
     return popover;
 }
 
+void AppWindow::show_update_toast(const char* title, guint timeout) {
+    g_clear_handle_id(&update_toast_expiry_, g_source_remove);
+    if (auto* previous = std::exchange(update_toast_, nullptr)) {
+        adw_toast_dismiss(previous);
+        g_object_unref(previous);
+    }
+    if (!title || !window_) return;
+
+    auto* toast = adw_toast_new(title);
+    update_toast_ = ADW_TOAST(g_object_ref(toast));
+    adw_toast_set_timeout(toast, 0);
+    g_signal_connect(toast, "dismissed", G_CALLBACK(+[](AdwToast* dismissed, gpointer data) {
+        auto& self = *static_cast<AppWindow*>(data);
+        if (self.update_toast_ != dismissed) return;
+        g_clear_handle_id(&self.update_toast_expiry_, g_source_remove);
+        g_clear_object(&self.update_toast_);
+    }), this);
+    adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), toast);
+    // A result has no action to complete. Clear it even if the pointer stayed
+    // over the toast, which would otherwise suspend Adwaita's countdown.
+    if (timeout) {
+        update_toast_expiry_ = g_timeout_add(timeout * 1000, +[](gpointer data) -> gboolean {
+            auto& self = *static_cast<AppWindow*>(data);
+            self.update_toast_expiry_ = 0;
+            self.show_update_toast(nullptr);
+            return G_SOURCE_REMOVE;
+        }, this);
+    }
+}
+
 void AppWindow::confirm_appimage_update(std::string path, std::string installer) {
-    auto toast = [this](const char* text) {
-        adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), adw_toast_new(text));
-    };
     if (update_running_) {
-        toast("An AppImage update is already running");
+        if (!update_toast_) show_update_toast("Updating the AppImage…", 0);
         return;
     }
     std::error_code error;
     const auto target = std::filesystem::canonical(path, error);
     if (error || !std::filesystem::is_regular_file(target, error)) {
-        toast("Could not locate the running AppImage");
+        show_update_toast("Could not locate the running AppImage");
         return;
     }
 
+    show_update_toast(nullptr);
     GtkWidget* parent = window_;
     auto* dialog = ADW_ALERT_DIALOG(adw_alert_dialog_new("Update This AppImage?", nullptr));
     gchar* display_path = g_filename_display_name(target.c_str());
@@ -1028,11 +1065,11 @@ void AppWindow::run_appimage_update(const std::string& path, const std::string& 
     g_object_unref(launcher);
     if (!process) {
         g_clear_error(&error);
-        adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), adw_toast_new("Could not start the installer"));
+        show_update_toast("Could not start the installer");
         return;
     }
     update_running_ = true;
-    adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toast_overlay_), adw_toast_new("Downloading the latest release…"));
+    show_update_toast("Updating the AppImage…", 0);
     g_subprocess_communicate_utf8_async(process, nullptr, nullptr,
         +[](GObject* object, GAsyncResult* result, gpointer data) {
             auto& window = *static_cast<AppWindow*>(data);
@@ -1042,12 +1079,12 @@ void AppWindow::run_appimage_update(const std::string& path, const std::string& 
             GError* error = nullptr;
             const bool complete = g_subprocess_communicate_utf8_finish(process, result, &output, &diagnostic, &error);
             window.update_running_ = false;
-            if (window.window_) {
-                if (complete && g_subprocess_get_successful(process)) {
-                    const bool current = output && g_strstr_len(output, -1, "Already up to date.");
-                    adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(window.toast_overlay_),
-                        adw_toast_new(current ? "Cadence is already up to date" : "Updated. Quit and reopen Cadence."));
-                } else {
+            if (complete && g_subprocess_get_successful(process)) {
+                const bool current = output && g_strstr_len(output, -1, "Already up to date.");
+                window.show_update_toast(current ? "Cadence is already up to date" : "Updated. Quit and reopen Cadence.");
+            } else {
+                window.show_update_toast(nullptr);
+                if (window.window_) {
                     auto* dialog = ADW_ALERT_DIALOG(adw_alert_dialog_new("Could Not Update", nullptr));
                     const char* reason = diagnostic && *diagnostic ? diagnostic :
                         "Download the latest AppImage from GitHub and try again.";
@@ -1260,7 +1297,7 @@ void AppWindow::refresh_preview(bool send) {
                             &last_clock_, &last_battery_, &last_system_, timer,
                             weather ? &*weather : nullptr, &vrchat, std::move(lyric)};
 
-    preview_text_ = render_chatbox(data, settings_);
+    preview_text_ = active_status_ ? settings_.status_phrases[*active_status_] : render_chatbox(data, settings_);
     const auto& text = preview_text_;
     const auto s = stats_for(text);
     const char* pause_label = settings_.send_automatically ? "Pause Sending" : "Resume Sending";
