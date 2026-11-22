@@ -235,7 +235,7 @@ AppWindow::AppWindow(AdwApplication* app)
     adw_view_switcher_set_stack(ADW_VIEW_SWITCHER(switcher), ADW_VIEW_STACK(stack));
     adw_view_switcher_set_policy(ADW_VIEW_SWITCHER(switcher), ADW_VIEW_SWITCHER_POLICY_WIDE);
 
-    // Display preferences are separate from chatbox sources and connections.
+    // Keep app updates separate from chatbox sources and connections.
     GtkWidget* cog = gtk_menu_button_new();
     gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(cog), "open-menu-symbolic");
     gtk_widget_set_tooltip_text(cog, "Settings");
@@ -950,9 +950,6 @@ void AppWindow::add_pulsoid_connection(AdwPreferencesPage* page) {
     adw_preferences_page_add(page, cg);
 }
 
-// the cog menu. this replaced the Display tab, which was two toggles on a
-// mostly-empty page. checkmarks are the natural control for this in a menu,
-// and it keeps the tab bar down to things that genuinely need a page.
 GtkWidget* AppWindow::build_settings_menu() {
     GtkWidget* popover = gtk_popover_new();
     GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
@@ -961,23 +958,6 @@ GtkWidget* AppWindow::build_settings_menu() {
     gtk_widget_set_margin_start(box, 6);
     gtk_widget_set_margin_end(box, 6);
 
-    auto add_check = [&](const char* label, bool active, std::function<void(bool)> cb) {
-        GtkWidget* check = gtk_check_button_new_with_label(label);
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(check), active);
-        g_signal_connect_data(check, "toggled",
-            G_CALLBACK(+[](GtkCheckButton* c, gpointer d) {
-                (*static_cast<std::function<void(bool)>*>(d))(
-                    gtk_check_button_get_active(c));
-            }), new std::function<void(bool)>(std::move(cb)),
-            +[](gpointer d, GClosure*) { delete static_cast<std::function<void(bool)>*>(d); },
-            static_cast<GConnectFlags>(0));
-        gtk_box_append(GTK_BOX(box), check);
-    };
-
-    add_check("Box drawing", settings_.box_drawing, [this](bool v) {
-        settings_.box_drawing = v; settings_.save(); refresh_preview();
-    });
-    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     const char* running_appimage = g_getenv("APPIMAGE");
     const char* installer = g_getenv("CADENCE_INSTALLER");
     if (running_appimage && g_path_is_absolute(running_appimage) &&

@@ -40,7 +40,6 @@ const char* css_data = R"CSS(
     font-size: 1.02em;
 }
 
-popover > contents > box > checkbutton { padding: 4px 6px; }
 
 /* pill buttons for connect/disconnect. kept small so they read as a pair of
    actions rather than the loudest thing in the row */

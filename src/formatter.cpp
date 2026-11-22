@@ -225,31 +225,6 @@ std::string normalize(const std::string& in) {
     return result;
 }
 
-std::string repeat(const std::string& unit, int times) {
-    std::string out;
-    for (int i = 0; i < times; ++i) out += unit;
-    return out;
-}
-
-// boxes the finished block, sized to the widest row so multi-line templates
-// still line up on the left and right edges
-std::string box_block(const std::string& text) {
-    gchar** rows = g_strsplit(text.c_str(), "\n", -1);
-    int width = 0;
-    for (int i = 0; rows[i]; ++i)
-        width = std::max(width, static_cast<int>(g_utf8_strlen(rows[i], -1)));
-
-    const std::string border = repeat("─", width + 2);
-    std::string out = "┌" + border + "┐";
-    for (int i = 0; rows[i]; ++i) {
-        const glong len = g_utf8_strlen(rows[i], -1);
-        out += "\n│ " + std::string(rows[i]) + std::string(static_cast<size_t>(width - len), ' ') + " │";
-    }
-    out += "\n└" + border + "┘";
-    g_strfreev(rows);
-    return out;
-}
-
 } // namespace
 
 std::string default_template() {
@@ -263,12 +238,10 @@ std::string render_template(const std::string& tmpl, const TemplateData& data, c
     std::string out;
     expand(source, i, data, st, true, out);
 
-    out = normalize(out);
     // deliberately no "…" placeholder here. an empty result means the template
     // genuinely produced nothing (no data, or every token misspelled) and the
     // preview should show that honestly rather than dressing it up
-    if (st.box_drawing && !out.empty()) out = box_block(out);
-    return out;
+    return normalize(out);
 }
 
 ChatboxStats stats_for(const std::string& text) {
@@ -429,7 +402,7 @@ std::string render_chatbox(const TemplateData& data, const AppSettings& st) {
             if (!text.empty()) text += separator;
             text += block;
         }
-        return st.box_drawing && !text.empty() ? box_block(text) : text;
+        return text;
     };
     auto out = combine();
     if (lyric_index && stats_for(out).over_limit) {

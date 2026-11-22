@@ -100,8 +100,6 @@ struct AppSettings {
     int lyrics_offset_ms = 0;
     int lyrics_max_width = 72;
 
-    // display
-    bool box_drawing = false;
     bool compact_layout = false;
     std::string compact_separator = " · ";
 

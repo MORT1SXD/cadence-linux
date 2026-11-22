@@ -163,7 +163,6 @@ AppSettings AppSettings::load() {
         s.compact_layout = get_bool(kf, "layout", "compact", s.compact_layout);
         s.compact_separator = get_string(kf, "layout", "separator", s.compact_separator);
 
-        s.box_drawing = get_bool(kf, "display", "box_drawing", s.box_drawing);
 
         s.send_interval_ms = get_int(kf, "output", "send_interval_ms", s.send_interval_ms);
         if (s.send_interval_ms != 2000 && s.send_interval_ms != 5000) s.send_interval_ms = 1000;
@@ -262,7 +261,6 @@ void AppSettings::save() const {
     g_key_file_set_integer(kf, "lyrics", "max_width", lyrics_max_width);
     g_key_file_set_integer(kf, "lyrics", "offset_ms", lyrics_offset_ms);
 
-    g_key_file_set_boolean(kf, "display", "box_drawing", box_drawing);
 
     g_key_file_set_integer(kf, "output", "send_interval_ms", send_interval_ms);
     g_key_file_set_integer(kf, "output", "bpm_smoothing", bpm_smoothing);
