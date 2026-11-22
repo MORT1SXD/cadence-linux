@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory() as temp, socket.socket(socket.AF_INET, socket
     config = Path(temp, "cadence")
     config.mkdir()
     config.joinpath("state.ini").write_text(
-        f"[osc]\nport={listener.getsockname()[1]}\n[song]\nenabled=false\n",
+        f"[osc]\nport={listener.getsockname()[1]}\n[song]\nenabled=false\n[output]\nnotification_sfx=true\n",
         encoding="utf-8",
     )
     env = dict(os.environ, XDG_CONFIG_HOME=temp, GTK_A11Y="none",
@@ -25,7 +25,8 @@ with tempfile.TemporaryDirectory() as temp, socket.socket(socket.AF_INET, socket
     try:
         data, _ = listener.recvfrom(4096)
         fields = [item.decode("utf-8") for item in data.split(b"\0") if item]
-        assert len(fields) == 3 and fields[:2] == ["/chatbox/input", ",sTT"], fields
+        # Even an older config with notifications on must send silently.
+        assert len(fields) == 3 and fields[:2] == ["/chatbox/input", ",sTF"], fields
         assert re.fullmatch(r"⌚ \d{2}:\d{2}", fields[2]), fields
         assert app.poll() is None, "The app exited after sending"
         print("Received the clock from the packaged app:", fields[2])

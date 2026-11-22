@@ -34,10 +34,8 @@ public:
     OscSender(const OscSender&) = delete;
     OscSender& operator=(const OscSender&) = delete;
 
-    // sends "/chatbox/input" s b n  (text, send_now, notification_sfx)
-    // the third arg is optional in vrchat's spec and defaults to true when
-    // omitted, so it is always sent explicitly to keep the intent obvious
-    bool send_chatbox(const std::string& text, bool notify, bool sfx);
+    // Send immediately without triggering VRChat's notification sound.
+    bool send_chatbox(const std::string& text);
 
     // sends "/chatbox/typing" b
     bool send_typing(bool typing);

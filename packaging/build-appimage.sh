@@ -78,9 +78,6 @@ mkdir -p "$notices"
     fi
 done > "$notices/ubuntu-sources.tsv"
 cp "$root/packaging/THIRD-PARTY.md" "$notices/README.md"
-cp "$work/cmake/_deps/discord_rpc-src/LICENSE" "$notices/discord-rpc"
-find "$work/cmake/_deps/discord_rpc-src/thirdparty" -iname license -path '*rapidjson*' \
-    -exec cp '{}' "$notices/rapidjson" \;
 
 ARCH=x86_64 "$tools/appimagetool" --runtime-file "$tools/runtime-x86_64" \
     "$appdir" "$output/cadence-x86_64.AppImage"

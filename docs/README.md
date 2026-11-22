@@ -9,7 +9,6 @@ the displayed character or line limit are not sent.
 
 **Pause Sending** keeps the preview running without sending it to VRChat.
 **Send Once** sends the current preview while leaving automatic updates paused.
-Pausing VRChat output does not turn off Discord sharing.
 
 | Source | Setup |
 | --- | --- |
@@ -58,20 +57,17 @@ If the source is waiting for data, confirm OSC is enabled, then try changing a
 gesture, moving, or toggling mute in VRChat. Cadence clears cached values on
 avatar change or after a minute without supported updates. If another OSC app
 already listens on `9001`, close it, or use a router or a separate VRChat output
-port. Set the matching port under **Connectivity → VRChat Status** and retry.
+port. Set the matching port under **Connectivity → Advanced OSC** and retry.
 
 ## Connectivity
 
-Cadence sends to `127.0.0.1:9000` by default. Under **Connectivity** you can
-change the port, adjust the update interval, test delivery, or disable
-notification sounds.
+Use **Connectivity → Send Test** to verify OSC delivery, or change how often
+Cadence updates the chatbox. Chatbox sends from Cadence are silent, including
+test messages.
 
-Discord can share your track and/or heart rate, but only after you enable it and
-confirm the sharing prompt. The AppImage includes Discord support without a
-bundled Application ID. If you want to use it, create an application in the
-[Discord Developer Portal](https://discord.com/developers/applications), close
-Cadence, and add `app_id=YOUR_ID` to the `[discord]` section of
-`~/.config/cadence/state.ini`. Then reopen Cadence.
+Cadence sends to `127.0.0.1:9000` by default. VRChat Status, if enabled, listens
+on `127.0.0.1:9001`. Only change these under **Advanced OSC** if you’ve changed
+[VRChat’s OSC ports](https://docs.vrchat.com/docs/osc-overview) or use an OSC router.
 
 ## Troubleshooting
 

@@ -22,14 +22,6 @@ enum Component {
     COMP_COUNT,
 };
 
-// Supplied by CMake from -DCADENCE_DISCORD_APP_ID. There is intentionally no
-// fallback ID in this file: source builds bring their own, prebuilt releases
-// have one compiled into the binary. The guard keeps direct/standalone builds
-// of this header valid outside CMake.
-#ifndef CADENCE_DISCORD_APP_ID
-#define CADENCE_DISCORD_APP_ID ""
-#endif
-
 // all user-facing formatting/behavior knobs, edited only through the app's
 // tabs and persisted silently in the background - never hand-edited
 struct AppSettings {
@@ -114,9 +106,6 @@ struct AppSettings {
     std::string compact_separator = " · ";
 
     // output
-    // vrchat's /chatbox/input takes an optional third bool that suppresses the
-    // notification sound. we only ever sent two, so this was always on.
-    bool notification_sfx = true;
     bool send_automatically = true;
 
     // how often the chatbox is refreshed, in ms. vrchat rate-limits, and a
@@ -131,21 +120,6 @@ struct AppSettings {
     std::string pulsoid_token;
     int osc_port = 9000;
     int vrchat_status_port = 9001;
-
-    // discord rich presence.
-    //
-    // No Application ID lives in the source tree. Builds get one through
-    // -DCADENCE_DISCORD_APP_ID=<id>; users can also override it at runtime via
-    // [discord] app_id in ~/.config/cadence/state.ini. The shipped binary has
-    // an ID compiled in at release time, which is why it just works.
-    static constexpr const char* kDefaultDiscordAppId = CADENCE_DISCORD_APP_ID;
-
-    // the user has seen and accepted the privacy warning. separate from the
-    // toggles below so the dialog is shown once, not on every launch
-    bool discord_acknowledged = false;
-    bool discord_music = false;
-    bool discord_heart_rate = false;
-    std::string discord_app_id = kDefaultDiscordAppId;
 
     // escape hatch: when set, this template is used verbatim and the component
     // toggles above are ignored. left empty unless someone deliberately writes

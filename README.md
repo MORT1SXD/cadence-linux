@@ -17,12 +17,20 @@ Linux desktop app that sends text through VRChat’s built-in OSC input.
    chmod +x cadence-x86_64.AppImage
    ./cadence-x86_64.AppImage
    ```
-3. In VRChat, enable **Action Menu → Options → OSC → Enabled**, then enter a
-   world. In Cadence, open **Connectivity → Send Test** to check it.
 
 The AppImage includes GTK, libadwaita, and libwebsockets. If FUSE isn’t available,
 run it with `--appimage-extract-and-run`. For a desktop launcher and easy
 updates, see the [install script](docs/install.md).
+
+## Set up VRChat
+
+1. In VRChat, enable **Action Menu → Options → OSC → Enabled**.
+2. Enter a world. In Cadence, choose **Connectivity → Send Test**. If the
+   test appears in your chatbox, you’re set.
+3. Open **Chatbox** in Cadence and enable the sources you want to share.
+
+Leave the ports alone unless you’ve configured custom ports or an OSC router.
+For help, see the [user guide](docs/README.md#troubleshooting).
 
 ## Make it yours
 
@@ -31,9 +39,8 @@ give each one its own line, or put everything on one line. Pause automatic
 updates while you edit, then **Send Once** to try the preview in-game.
 
 Music comes from MPRIS, with optional synced lyrics. Heart rate comes from
-Pulsoid. Clock, session timer,
-battery, CPU/RAM, and custom text all work offline. Weather is optional and uses
-a city you choose, never location detection. Discord sharing is off by default.
+Pulsoid. Clock, session timer, battery, CPU/RAM, and custom text work offline.
+Weather is optional and uses a city you choose, never location detection.
 VRChat Status can show mic mute, gestures, and movement using local OSC.
 
 [Build from source](docs/build.md) · [User guide](docs/README.md) · [MIT License](LICENSE)

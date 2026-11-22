@@ -67,13 +67,11 @@ bool OscSender::send_raw(const std::vector<uint8_t>& packet) {
     return false;
 }
 
-bool OscSender::send_chatbox(const std::string& text, bool notify, bool sfx) {
+bool OscSender::send_chatbox(const std::string& text) {
     OscMessage msg("/chatbox/input");
     msg.add_string(text);
-    msg.add_bool(notify);
-    // optional third arg: when false, vrchat shows the message without playing
-    // the chat notification sound
-    msg.add_bool(sfx);
+    msg.add_bool(true);  // Send immediately.
+    msg.add_bool(false); // No notification sound, including manual sends.
     return send_raw(msg.encode());
 }
 

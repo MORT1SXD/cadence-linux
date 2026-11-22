@@ -1087,7 +1087,10 @@ GtkWidget* AppWindow::build_connect_page() {
     GtkWidget* page = adw_preferences_page_new();
 
     AdwPreferencesGroup* vg = group("VRChat OSC", "Where chatbox messages are sent.");
-    GtkWidget* port = spin_row("Input port", "VRChat's default is 9000.",
+    auto* advanced = ADW_EXPANDER_ROW(adw_expander_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(advanced), "Advanced OSC");
+    adw_expander_row_set_subtitle(advanced, "Only needed for custom VRChat ports or an OSC router.");
+    GtkWidget* port = spin_row("VRChat Input Port", "Where Cadence sends chatbox text (default 9000).",
                                1, 65535, 1, settings_.osc_port, [this](int v) {
         const bool was_same_port = settings_.osc_port == settings_.vrchat_status_port;
         settings_.osc_port = v;
@@ -1096,7 +1099,7 @@ GtkWidget* AppWindow::build_connect_page() {
         if (was_same_port || v == settings_.vrchat_status_port) reset_vrchat_listener();
         refresh_preview();
     });
-    adw_preferences_group_add(vg, port);
+    adw_expander_row_add_row(advanced, port);
     GtkWidget* test_row = adw_action_row_new();
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(test_row), "Test Message");
     adw_action_row_set_subtitle(ADW_ACTION_ROW(test_row), "Check that the chatbox receives OSC.");
@@ -1107,10 +1110,7 @@ GtkWidget* AppWindow::build_connect_page() {
     });
     adw_action_row_add_suffix(ADW_ACTION_ROW(test_row), test);
     adw_preferences_group_add(vg, test_row);
-    adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), vg);
-
-    auto* status_group = group("VRChat Status", "Read-only. Cadence listens on this computer only when the source is enabled.");
-    adw_preferences_group_add(status_group, spin_row("VRChat Output Port", "VRChat's default is 9001.",
+    adw_expander_row_add_row(advanced, spin_row("VRChat Output Port", "Where Cadence listens for VRChat Status (default 9001).",
         1, 65535, 1, settings_.vrchat_status_port, [this](int value) {
             settings_.vrchat_status_port = value;
             settings_.save();
@@ -1123,35 +1123,11 @@ GtkWidget* AppWindow::build_connect_page() {
     gtk_widget_set_valign(vrchat_retry_button_, GTK_ALIGN_CENTER);
     on_click(vrchat_retry_button_, [this] { reset_vrchat_listener(); refresh_preview(); });
     adw_action_row_add_suffix(ADW_ACTION_ROW(vrchat_listener_row_), vrchat_retry_button_);
-    adw_preferences_group_add(status_group, vrchat_listener_row_);
-    adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), status_group);
+    adw_expander_row_add_row(advanced, vrchat_listener_row_);
+    adw_preferences_group_add(vg, GTK_WIDGET(advanced));
+    adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), vg);
 
-    // the setup steps that are easy to miss and impossible to debug from here,
-    // so they belong in the app rather than only in a readme
-    AdwPreferencesGroup* cg = group("Before it shows up in VRChat",
-        "The green OSC pill only means cadence wrote packets without error — UDP is "
-        "fire-and-forget, so it can't tell you whether VRChat received them.");
-    const char* steps[][2] = {
-        {"Enable OSC", "VRChat action menu → Options → OSC → Enabled."},
-         {"Load Into a World", "Enter a world before testing chatbox output."},
-    };
-    for (const auto& s : steps) {
-        GtkWidget* row = adw_action_row_new();
-        adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), s[0]);
-        adw_action_row_set_subtitle(ADW_ACTION_ROW(row), s[1]);
-        adw_preferences_group_add(cg, row);
-    }
-    adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), cg);
-
-    // --- output cadence ---
-    AdwPreferencesGroup* og = group("Output",
-        "How often the chatbox is refreshed, and how noisy it is.");
-    adw_preferences_group_add(og, state_row("Notification sound",
-        "Play VRChat's chat notification with each update", settings_.notification_sfx,
-        [this](bool v) {
-            settings_.notification_sfx = v;
-            settings_.save();
-        }));
+    AdwPreferencesGroup* og = group("Chatbox Updates");
 
     // combos rather than a free spin box: these are the values that make sense
     // against vrchat's rate limit
@@ -1170,178 +1146,7 @@ GtkWidget* AppWindow::build_connect_page() {
     adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), og);
     add_pulsoid_connection(ADW_PREFERENCES_PAGE(page));
 
-    // --- discord rich presence ---
-    if (DiscordPresence::supported()) {
-        AdwPreferencesGroup* dg = group("Discord",
-            "Show your current song and heart rate on your Discord profile.");
-
-        // the gate. acknowledging once is remembered, so this dialog doesn't
-        // reappear on every launch
-        GtkWidget* gate_row = state_row("Share with Discord",
-            "Required before anything can be published", settings_.discord_acknowledged,
-            [this](bool v) {
-                if (updating_ui_) return;
-                if (v) {
-                    show_discord_warning();
-                } else {
-                    settings_.discord_acknowledged = false;
-                    settings_.save();
-                    discord_.disconnect();
-                    sync_discord_ui();
-                }
-            });
-        discord_toggle_row_ = gate_row;
-        adw_preferences_group_add(dg, gate_row);
-
-        struct Field {
-            const char* title;
-            const char* sub;
-            bool AppSettings::*member;
-            GtkWidget** row;
-        };
-        const Field fields[] = {
-            {"Music",      "Show what you're listening to", &AppSettings::discord_music,
-             &discord_music_row_},
-            {"Heart rate", "Show your bpm alongside it",     &AppSettings::discord_heart_rate,
-             &discord_hr_row_},
-        };
-        for (const auto& f : fields) {
-            GtkWidget* row = state_row(f.title, f.sub, settings_.*(f.member),
-                [this, f](bool v) {
-                    if (updating_ui_) return;
-                    settings_.*(f.member) = v;
-                    settings_.save();
-                    // nothing selected means there's nothing left to publish
-                    if (!settings_.discord_music && !settings_.discord_heart_rate)
-                        discord_.clear_presence();
-                });
-            *f.row = row;
-            adw_preferences_group_add(dg, row);
-        }
-
-        discord_status_row_ = adw_action_row_new();
-        adw_preferences_row_set_title(ADW_PREFERENCES_ROW(discord_status_row_), "Status");
-        adw_action_row_set_subtitle(ADW_ACTION_ROW(discord_status_row_), "off");
-        adw_preferences_group_add(dg, discord_status_row_);
-
-        sync_discord_ui();
-        adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), dg);
-    }
-
     return page;
-}
-// shown once, before anything is ever sent. deliberately only two buttons:
-// accept or decline. *what* gets shared is then left to the two toggles, so
-// the dialog never makes that decision on the user's behalf.
-void AppWindow::show_discord_warning() {
-    AdwDialog* dlg = adw_alert_dialog_new("Share with Discord?", nullptr);
-    auto* dialog = ADW_ALERT_DIALOG(dlg);
-    adw_alert_dialog_format_body(dialog,
-        "Your Discord status is visible to anyone who can see your profile, and "
-        "other apps can read it through Discord's API.\n\n"
-        "After this you can choose what to share - song, heart rate, both or "
-        "neither - and change it whenever you like.");
-    adw_alert_dialog_add_responses(dialog,
-        "nope", "No thanks",
-        "acknowledge", "Acknowledge",
-        nullptr);
-    adw_alert_dialog_set_response_appearance(dialog, "acknowledge", ADW_RESPONSE_SUGGESTED);
-    adw_alert_dialog_set_default_response(dialog, "nope");
-    adw_alert_dialog_set_close_response(dialog, "nope");
-
-    g_signal_connect_data(dialog, "response",
-        G_CALLBACK(+[](AdwAlertDialog* d, const char* response, gpointer) {
-            auto* self = static_cast<AppWindow*>(g_object_get_data(G_OBJECT(d), "cadence-self"));
-            if (!self) return;
-            if (std::string(response ? response : "") == "acknowledge") {
-                self->settings_.discord_acknowledged = true;
-                self->settings_.save();
-            }
-            // declined or dismissed: snap the switch back either way
-            self->sync_discord_ui();
-        }),
-        nullptr, nullptr, static_cast<GConnectFlags>(0));
-
-    g_object_set_data(G_OBJECT(dlg), "cadence-self", this);
-    adw_dialog_present(dlg, GTK_WIDGET(window_));
-}
-
-// pushes settings into the discord rows. guarded by updating_ui_ so writing the
-// switch state doesn't re-enter the handler that opened the dialog.
-void AppWindow::sync_discord_ui() {
-    updating_ui_ = true;
-
-    const bool acked = settings_.discord_acknowledged;
-    adw_switch_row_set_active(ADW_SWITCH_ROW(discord_toggle_row_), acked);
-    adw_switch_row_set_active(ADW_SWITCH_ROW(discord_music_row_), settings_.discord_music);
-    adw_switch_row_set_active(ADW_SWITCH_ROW(discord_hr_row_), settings_.discord_heart_rate);
-    gtk_widget_set_sensitive(discord_music_row_, acked);
-    gtk_widget_set_sensitive(discord_hr_row_, acked);
-
-    updating_ui_ = false;
-}
-
-void AppWindow::update_discord() {
-    if (!DiscordPresence::supported()) return;
-
-    if (!settings_.discord_acknowledged) {
-        if (discord_.connected()) discord_.disconnect();
-        if (discord_status_row_)
-            adw_action_row_set_subtitle(ADW_ACTION_ROW(discord_status_row_), "off");
-        return;
-    }
-
-    if (settings_.discord_app_id.empty()) {
-        if (discord_status_row_)
-            adw_action_row_set_subtitle(ADW_ACTION_ROW(discord_status_row_),
-                                         "needs an Application ID");
-        return;
-    }
-
-    if (!discord_.connected()) {
-        if (!discord_.connect(settings_.discord_app_id)) return;
-    }
-    discord_.pump();
-
-    // nothing selected means nothing gets published
-    if (!settings_.discord_music && !settings_.discord_heart_rate) {
-        discord_.clear_presence();
-        if (discord_status_row_)
-            adw_action_row_set_subtitle(ADW_ACTION_ROW(discord_status_row_),
-                                         "nothing selected");
-        return;
-    }
-
-    // discord renders `state` as the first line, `details` beneath it. with only
-    // one thing shared it takes the top line rather than leaving a blank row
-    // underneath it.
-    std::string song;
-    if (settings_.discord_music && last_track_) {
-        song = last_track_->title;
-        if (!last_track_->artist.empty()) song += " \u2014 " + last_track_->artist;
-        // discord caps each field at 128 bytes; trim well short of that so the
-        // status never gets cut off mid-word
-        if (g_utf8_strlen(song.c_str(), -1) > 64) {
-            const char* cut = g_utf8_offset_to_pointer(song.c_str(), 61);
-            song = std::string(song.c_str(), cut - song.c_str()) + "\u2026";
-        }
-    }
-    std::string heart;
-    if (settings_.discord_heart_rate && last_hr_.has_data)
-        heart = "\u2665 " + std::to_string(last_hr_.current) + " bpm";
-
-    std::string top = song, bottom = heart;
-    if (top.empty()) { top = bottom; bottom.clear(); }
-
-    discord_.set_presence(top, bottom);
-
-    if (discord_status_row_) {
-        std::string s = "sharing ";
-        if (settings_.discord_music && settings_.discord_heart_rate) s += "song + heart rate";
-        else if (settings_.discord_music) s += "song";
-        else s += "heart rate";
-        adw_action_row_set_subtitle(ADW_ACTION_ROW(discord_status_row_), s.c_str());
-    }
 }
 
 void AppWindow::connect_pulsoid(const std::string& token) {
@@ -1386,7 +1191,7 @@ void AppWindow::send_message(const std::string& text, bool manual) {
     const char* status = nullptr;
     if (last_osc_send_ != 0 && now - last_osc_send_ < G_USEC_PER_SEC) {
         status = "Wait a moment before sending again";
-    } else if (osc_sender_.send_chatbox(text, true, settings_.notification_sfx)) {
+    } else if (osc_sender_.send_chatbox(text)) {
         last_osc_send_ = now;
         status = "OSC packet sent";
     } else {
@@ -1534,9 +1339,6 @@ void AppWindow::refresh_preview(bool send) {
     // /chatbox/input osc endpoint. nothing here ever touches the game itself.
     if (send && settings_.send_automatically) send_message(text);
 
-    // discord gets the same data cadence already had. it never learns anything
-    // about vrchat beyond what the user chose to publish.
-    update_discord();
 }
 
 void AppWindow::reset_vrchat_listener() {

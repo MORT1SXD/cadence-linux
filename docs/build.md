@@ -21,11 +21,6 @@ cmake --build build --parallel
 ./build/cadence
 ```
 
-The default build fetches Discord RPC and its RapidJSON dependency. Pass
-`-DENABLE_DISCORD=OFF` on the CMake configure line to skip both dependencies
-and remove Discord sharing. Discord builds still need an Application ID,
-which you can configure at runtime; see the [user guide](README.md#connectivity).
-
 For a desktop launcher and icon, install to `~/.local`:
 
 ```sh

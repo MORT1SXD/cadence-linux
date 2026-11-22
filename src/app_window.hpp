@@ -2,7 +2,6 @@
 #include "clock_source.hpp"
 #include "formatter.hpp"
 #include "lyrics_source.hpp"
-#include "discord_presence.hpp"
 #include "media_reader.hpp"
 #include "osc_sender.hpp"
 #include "pulsoid_client.hpp"
@@ -51,15 +50,6 @@ private:
     GtkWidget* connect_btn_ = nullptr;
     GtkWidget* disconnect_btn_ = nullptr;
     GtkWidget* toast_overlay_ = nullptr;
-    GtkWidget* discord_status_row_ = nullptr;
-    GtkWidget* discord_toggle_row_ = nullptr;
-    GtkWidget* discord_music_row_ = nullptr;
-    GtkWidget* discord_hr_row_ = nullptr;
-    DiscordPresence discord_;
-
-    // set while writing settings back into widgets, so the handler that opened
-    // the privacy dialog isn't re-entered by the update it triggers
-    bool updating_ui_ = false;
     bool update_running_ = false;
 
     GtkWidget* component_list_ = nullptr;
@@ -142,9 +132,6 @@ private:
     void restart_timer();
     void reset_session_stats();
     int smoothed_bpm() const;
-    void show_discord_warning();
-    void sync_discord_ui();
-    void update_discord();
     void connect_pulsoid(const std::string& token);
     void disconnect_pulsoid();
     void on_pulsoid_status(const std::string& status);

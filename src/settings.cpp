@@ -165,7 +165,6 @@ AppSettings AppSettings::load() {
 
         s.box_drawing = get_bool(kf, "display", "box_drawing", s.box_drawing);
 
-        s.notification_sfx = get_bool(kf, "output", "notification_sfx", s.notification_sfx);
         s.send_interval_ms = get_int(kf, "output", "send_interval_ms", s.send_interval_ms);
         if (s.send_interval_ms != 2000 && s.send_interval_ms != 5000) s.send_interval_ms = 1000;
         s.bpm_smoothing = get_int(kf, "output", "bpm_smoothing", s.bpm_smoothing);
@@ -174,13 +173,6 @@ AppSettings AppSettings::load() {
         s.pulsoid_token = get_string(kf, "pulsoid", "token", s.pulsoid_token);
         s.osc_port = get_int(kf, "osc", "port", s.osc_port);
         s.vrchat_status_port = std::clamp(get_int(kf, "osc", "status_port", s.vrchat_status_port), 1, 65535);
-
-        s.discord_acknowledged = get_bool(kf, "discord", "acknowledged", s.discord_acknowledged);
-        s.discord_music = get_bool(kf, "discord", "music", s.discord_music);
-        s.discord_heart_rate = get_bool(kf, "discord", "heart_rate", s.discord_heart_rate);
-        // only override the configured id if one was actually stored
-        const std::string stored_id = get_string(kf, "discord", "app_id", "");
-        if (!stored_id.empty()) s.discord_app_id = stored_id;
 
         s.raw_template = get_string(kf, "format", "raw_template", "");
         s.use_raw_template = get_bool(kf, "format", "use_raw_template", s.use_raw_template);
@@ -272,18 +264,12 @@ void AppSettings::save() const {
 
     g_key_file_set_boolean(kf, "display", "box_drawing", box_drawing);
 
-    g_key_file_set_boolean(kf, "output", "notification_sfx", notification_sfx);
     g_key_file_set_integer(kf, "output", "send_interval_ms", send_interval_ms);
     g_key_file_set_integer(kf, "output", "bpm_smoothing", bpm_smoothing);
 
     g_key_file_set_string(kf, "pulsoid", "token", pulsoid_token.c_str());
     g_key_file_set_integer(kf, "osc", "port", osc_port);
     g_key_file_set_integer(kf, "osc", "status_port", vrchat_status_port);
-
-    g_key_file_set_boolean(kf, "discord", "acknowledged", discord_acknowledged);
-    g_key_file_set_boolean(kf, "discord", "music", discord_music);
-    g_key_file_set_boolean(kf, "discord", "heart_rate", discord_heart_rate);
-    g_key_file_set_string(kf, "discord", "app_id", discord_app_id.c_str());
 
     if (!raw_template.empty())
         g_key_file_set_string(kf, "format", "raw_template", raw_template.c_str());
