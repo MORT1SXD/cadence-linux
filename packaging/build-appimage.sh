@@ -47,7 +47,7 @@ cp /usr/share/icons/hicolor/index.theme "$appdir/usr/share/icons/hicolor/"
 export APPIMAGE_EXTRACT_AND_RUN=1
 "$tools/linuxdeploy" --appdir "$appdir" \
     --desktop-file "$root/packaging/dev.cadence.app.desktop" \
-    --icon-file "$root/packaging/dev.cadence.app.svg" \
+    --icon-file "$work/cmake/dev.cadence.app.png" \
     --executable "$pixbuf_dir/gdk-pixbuf-query-loaders" \
     --library "$svg" --custom-apprun "$root/packaging/AppRun"
 
@@ -57,8 +57,10 @@ for lib in libgtk-4.so.1 libadwaita-1.so.0; do
     test -e "$appdir/usr/lib/$lib"
 done
 compgen -G "$appdir/usr/lib/libwebsockets.so.*" >/dev/null
-rsvg-convert -w 256 -h 256 -o "$appdir/dev.cadence.app.png" "$root/packaging/dev.cadence.app.svg"
-ln -s dev.cadence.app.png "$appdir/.DirIcon"
+# Keep a regular root icon so the desktop installer can extract just this file.
+rm -f -- "$appdir/dev.cadence.app.png"
+install -m 0644 "$work/cmake/dev.cadence.app.png" "$appdir/dev.cadence.app.png"
+ln -sfn dev.cadence.app.png "$appdir/.DirIcon"
 
 # Record Ubuntu source package versions and ship the copyright notices for
 # libraries and data copied into the image.

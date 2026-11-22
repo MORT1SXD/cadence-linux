@@ -7,11 +7,13 @@
 #include "pulsoid_client.hpp"
 #include "settings.hpp"
 #include "session_timer.hpp"
+#include "tray.hpp"
 #include <adwaita.h>
 #include <atomic>
 #include <deque>
 #include <gtk/gtk.h>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,8 +23,10 @@ namespace cadence {
 class AppWindow {
 public:
     explicit AppWindow(AdwApplication* app);
+    void present(const std::string& startup_id = {});
 
 private:
+    AdwApplication* app_;
     GtkWidget* window_ = nullptr;
     GtkWidget* preview_label_ = nullptr;
     GtkWidget* stats_label_ = nullptr;
@@ -61,6 +65,11 @@ private:
     bool update_running_ = false;
     AdwToast* update_toast_ = nullptr;
     guint update_toast_expiry_ = 0;
+    std::shared_ptr<Tray> tray_;
+    GtkWidget* close_behavior_button_ = nullptr;
+    AdwAlertDialog* close_dialog_ = nullptr;
+    bool held_in_tray_ = false;
+    bool quitting_ = false;
 
     GtkWidget* component_list_ = nullptr;
     struct SourceRow {
@@ -129,6 +138,14 @@ private:
     void add_pulsoid_connection(AdwPreferencesPage* page);
     GtkWidget* build_connect_page();
     GtkWidget* build_settings_menu();
+    void set_sending(bool sending);
+    gboolean request_close();
+    void hide_to_tray();
+    void quit();
+    void prepare_to_quit();
+    void tray_availability_changed(bool available);
+    void refresh_close_dialog();
+    void edit_close_behavior();
     void confirm_appimage_update(std::string path, std::string installer);
     void run_appimage_update(const std::string& path, const std::string& installer);
     void show_update_toast(const char* title, guint timeout = 4);

@@ -15,6 +15,31 @@ namespace cadence {
 
 namespace {
 
+void update_header_controls(GtkSettings* settings, GParamSpec*, AdwHeaderBar* header) {
+    // Keep the desktop's button placement, but omit the in-window app icon.
+    char* layout = nullptr;
+    g_object_get(settings, "gtk-decoration-layout", &layout, nullptr);
+    if (!layout) return;
+
+    auto** sides = g_strsplit(layout, ":", 2);
+    std::string controls;
+    for (auto** side = sides; *side; ++side) {
+        if (side != sides) controls += ':';
+        auto** buttons = g_strsplit(*side, ",", -1);
+        bool first = true;
+        for (auto** button = buttons; *button; ++button) {
+            if (g_strcmp0(*button, "icon") == 0) continue;
+            if (!first) controls += ',';
+            controls += *button;
+            first = false;
+        }
+        g_strfreev(buttons);
+    }
+    adw_header_bar_set_decoration_layout(header, controls.c_str());
+    g_strfreev(sides);
+    g_free(layout);
+}
+
 // ---- signal bridges ------------------------------------------------------
 // gtk/adw signals are C callbacks; these wrap them so the builders below read
 // as plain "when this changes, do that"
@@ -173,7 +198,7 @@ GtkWidget* spin_row(const char* title, const char* sub,
 } // namespace
 
 AppWindow::AppWindow(AdwApplication* app)
-    : settings_(AppSettings::load()),
+    : app_(app), settings_(AppSettings::load()),
       osc_sender_("127.0.0.1", static_cast<uint16_t>(settings_.osc_port)) {
 
     pulsoid_.set_token(settings_.pulsoid_token);
@@ -207,10 +232,7 @@ AppWindow::AppWindow(AdwApplication* app)
     window_ = adw_application_window_new(GTK_APPLICATION(app));
     g_object_add_weak_pointer(G_OBJECT(window_), reinterpret_cast<gpointer*>(&window_));
     g_signal_connect(window_, "close-request", G_CALLBACK(+[](GtkWindow*, gpointer data) -> gboolean {
-        auto& self = *static_cast<AppWindow*>(data);
-        self.vrchat_listener_.stop();
-        if (self.lyrics_job_) g_cancellable_cancel(self.lyrics_job_);
-        return FALSE;
+        return static_cast<AppWindow*>(data)->request_close();
     }), this);
     gtk_window_set_title(GTK_WINDOW(window_), "cadence");
     gtk_window_set_default_size(GTK_WINDOW(window_), 680, 680);
@@ -223,6 +245,10 @@ AppWindow::AppWindow(AdwApplication* app)
     adw_toast_overlay_set_child(ADW_TOAST_OVERLAY(toast_overlay_), root);
 
     GtkWidget* header = adw_header_bar_new();
+    auto* gtk_settings = gtk_widget_get_settings(window_);
+    update_header_controls(gtk_settings, nullptr, ADW_HEADER_BAR(header));
+    g_signal_connect_object(gtk_settings, "notify::gtk-decoration-layout",
+        G_CALLBACK(update_header_controls), header, G_CONNECT_DEFAULT);
     gtk_box_append(GTK_BOX(root), header);
 
     GtkWidget* stack = adw_view_stack_new();
@@ -257,7 +283,14 @@ AppWindow::AppWindow(AdwApplication* app)
     reset_vrchat_listener();
     refresh_preview(true);
     restart_timer();
-    gtk_window_present(GTK_WINDOW(window_));
+    tray_ = std::make_shared<Tray>(Tray::Actions{
+        [this](const std::string& token) { present(token); },
+        [this] { set_sending(!settings_.send_automatically); },
+        [this] { quit(); },
+        [this](bool available) { tray_availability_changed(available); },
+    });
+    tray_->start(settings_.send_automatically);
+    present();
 }
 
 void AppWindow::restart_timer() {
@@ -361,9 +394,7 @@ GtkWidget* AppWindow::build_chatbox_page() {
     gtk_widget_set_valign(pause_button_, GTK_ALIGN_CENTER);
     gtk_widget_set_tooltip_text(pause_button_, "Pause automatic updates to edit or send a single preview");
     on_click(pause_button_, [this] {
-        settings_.send_automatically = !settings_.send_automatically;
-        settings_.save();
-        refresh_preview();
+        set_sending(!settings_.send_automatically);
     });
     gtk_box_append(GTK_BOX(actions), pause_button_);
 
@@ -985,6 +1016,15 @@ GtkWidget* AppWindow::build_settings_menu() {
         gtk_box_append(GTK_BOX(box), updates);
     }
 
+    close_behavior_button_ = gtk_button_new_with_label("Close Behavior…");
+    gtk_widget_add_css_class(close_behavior_button_, "flat");
+    gtk_widget_set_visible(close_behavior_button_, FALSE);
+    on_click(close_behavior_button_, [this, popover] {
+        gtk_popover_popdown(GTK_POPOVER(popover));
+        edit_close_behavior();
+    });
+    gtk_box_append(GTK_BOX(box), close_behavior_button_);
+
     gtk_popover_set_child(GTK_POPOVER(popover), box);
     return popover;
 }
@@ -1218,6 +1258,7 @@ void AppWindow::send_message(const std::string& text, bool manual) {
 }
 
 void AppWindow::refresh_preview(bool send) {
+    if (quitting_) return;
     const bool raw = settings_.use_raw_template && !settings_.raw_template.empty();
     last_track_ = media_.current_track(settings_.show_music_progress || settings_.lyrics_online ||
                                         (raw && settings_.raw_template.find("music_progress") != std::string::npos));

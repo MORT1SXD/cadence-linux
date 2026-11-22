@@ -1,4 +1,4 @@
-# Cadence
+# <img src="src/cadence.png" alt="" width="48" height="48"> Cadence
 
 Put your music, heart rate, or a little note in your VRChat chatbox. Cadence is a
 Linux desktop app that sends text through VRChat’s built-in OSC input.

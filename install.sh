@@ -132,6 +132,13 @@ else
         extract=true
         extra=' --appimage-extract-and-run'
     fi
+    icon=applications-utilities
+    if (cd "$stage" && "$appimage" --appimage-extract dev.cadence.app.png >/dev/null 2>&1) &&
+       [[ -f "$stage/squashfs-root/dev.cadence.app.png" && ! -L "$stage/squashfs-root/dev.cadence.app.png" ]]; then
+        install -m 0644 -- "$stage/squashfs-root/dev.cadence.app.png" "$stage/dev.cadence.app.png"
+        mv -T -- "$stage/dev.cadence.app.png" "$install_dir/dev.cadence.app.png"
+        icon=${install_dir//\\/\\\\}/dev.cadence.app.png
+    fi
     cat > "$stage/cadence.desktop" <<EOF
 $marker
 [Desktop Entry]
@@ -139,7 +146,7 @@ Type=Application
 Name=Cadence
 Comment=Send a custom chatbox to VRChat over OSC
 Exec="$exec_path"$extra
-Icon=applications-utilities
+Icon=$icon
 Categories=Utility;
 Terminal=false
 X-Cadence-Extract=$extract

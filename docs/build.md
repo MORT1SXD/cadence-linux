@@ -1,7 +1,8 @@
 # Build Cadence from source
 
-You’ll need a C++20 compiler, CMake, pkg-config, GTK 4.12+, libadwaita 1.5+,
-and development files for libwebsockets, libcurl 7.85+, and JSON-GLib.
+You’ll need C and C++20 compilers, CMake, pkg-config, `glib-compile-resources`,
+GTK 4.12+, libadwaita 1.5+, and development files for libwebsockets, libcurl
+7.85+, and JSON-GLib.
 
 | Distribution | Dependencies |
 | --- | --- |

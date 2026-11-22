@@ -23,6 +23,8 @@ enum Component {
     COMP_COUNT,
 };
 
+enum class CloseAction { Ask, Quit, HideToTray };
+
 // all user-facing formatting/behavior knobs, edited only through the app's
 // tabs and persisted silently in the background - never hand-edited
 struct AppSettings {
@@ -106,6 +108,7 @@ struct AppSettings {
 
     // output
     bool send_automatically = true;
+    CloseAction close_action = CloseAction::Ask;
 
     static constexpr std::size_t kMaxStatuses = 50;
     static constexpr std::size_t kMaxStatusBytes = 1024;

@@ -23,6 +23,21 @@ locally, but the active switch always starts off when you reopen Cadence.
 **Pause Sending** still pauses automatic sends; use **Send Once** if you want
 to send the active status without resuming automatic updates.
 
+## System tray
+
+If your desktop has a compatible tray, closing the window asks whether to
+**Quit** or **Hide to Tray**. Hiding doesn't change your sending state. The
+tray menu can show Cadence, pause or resume sending, or quit the app.
+**Remember my choice** skips the prompt next time; change it under
+**Settings → Close Behavior**.
+
+Plasma has a built-in tray. On GNOME, use the
+[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/);
+on Hyprland, enable the [Waybar `tray` module](https://github.com/Alexays/Waybar/wiki/Module:-Tray).
+Without a tray, closing the window quits normally. If the tray disappears
+while Cadence is hidden, the window comes back. Launching Cadence again also
+brings an existing window forward.
+
 ## Sources
 
 | Source | Setup |

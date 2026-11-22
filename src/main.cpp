@@ -90,9 +90,14 @@ void load_css() {
 }
 
 void on_activate(AdwApplication* app, gpointer) {
+    if (auto* window = static_cast<cadence::AppWindow*>(g_object_get_data(G_OBJECT(app), "cadence-window"))) {
+        window->present();
+        return;
+    }
     load_css();
-    // intentionally left alive: it owns everything and lives as long as the window does
-    new cadence::AppWindow(app);
+    gtk_window_set_default_icon_name("dev.cadence.app");
+    // One controller for the application lifetime, including a hidden window.
+    g_object_set_data(G_OBJECT(app), "cadence-window", new cadence::AppWindow(app));
 }
 
 } // namespace

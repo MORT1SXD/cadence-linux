@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/dev/cadence/app/icons">
+    <file alias="48x48/apps/dev.cadence.app.png">cadence.png</file>
+  </gresource>
+</gresources>
